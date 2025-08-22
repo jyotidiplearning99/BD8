@@ -1,0 +1,29 @@
+# Core DL (CPU wheels)
+torch==2.3.1
+torchvision==0.18.1
+pytorch-lightning==2.3.0
+
+# Models & aug
+timm==1.0.8
+segmentation-models-pytorch==0.3.3
+albumentations==1.4.8
+opencv-python-headless==4.10.0.84
+
+# Imaging / I/O
+aicsimageio==4.15.0
+aicspylibczi==3.1.2
+imagecodecs==2024.6.1
+zarr==2.17.2
+
+# Sci/EDA
+pandas==2.2.2
+numpy==1.26.4
+scikit-image==0.24.0
+scikit-learn==1.5.1
+matplotlib==3.9.0
+tqdm==4.66.4
+
+# Explainability / distributed (optional; you can comment out)
+captum==0.7.0
+dask[complete]==2024.8.0
+dask-jobqueue==0.8.5
