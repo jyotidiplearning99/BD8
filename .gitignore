@@ -1,17 +1,28 @@
-__pycache__/
-*.pyc
-.venv/
-.env
-.ipynb_checkpoints/
-.DS_Store
-outputs/
-models/*.ckpt
+# Data files
+*.cvw
+*.xlsx
+data/
+
+# Tools and binaries
+*.jar
+*.zip
+bftools/
+tools/
+javabridge/
+
+# Virtual environments
 .venv/
 venv/
-lightning_logs/
-outputs/
-data/
+env/
+
+# Python
 __pycache__/
 *.pyc
-.env
-bftools.zip
+*.pyo
+
+# Outputs
+outputs/
+lightning_logs/
+
+# System
+.DS_Store
