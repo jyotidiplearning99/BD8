@@ -6,3 +6,12 @@ __pycache__/
 .DS_Store
 outputs/
 models/*.ckpt
+.venv/
+venv/
+lightning_logs/
+outputs/
+data/
+__pycache__/
+*.pyc
+.env
+bftools.zip
