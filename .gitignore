@@ -1,3 +1,9 @@
+# Model checkpoints - DON'T track these
+*.ckpt
+*.pth
+*.pt
+*.safetensors
+
 # Data files
 *.cvw
 *.xlsx
@@ -23,6 +29,7 @@ __pycache__/
 # Outputs
 outputs/
 lightning_logs/
+models/
 
 # System
 .DS_Store
