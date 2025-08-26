@@ -1,27 +1,22 @@
-# Configuration for BD S8 Analysis Pipeline
-
+# config/config.yaml - Updated for REAL data
 data:
+  # For synthetic/CVW data (OLD)
   excel_path: "data/List of S8 data.xlsx"
-  data_folder: "data/converted"  # Folder containing CVW, CZI, or TIFF files
-  output_dir: "outputs/"
+  data_folder: "data/"
+  
+  # For REAL TIFF data (NEW - USE THIS!)
+  real_data_root: "/scratch/project_2010376/BDS8/BDS8_data"
+  sample_types: ["AML", "Healthy BM"]
+  use_real_data: true  # Switch to REAL data
   
 model:
-  num_classes: 5
+  num_classes: 2  # Binary: AML vs Healthy
   num_channels: 3
-  architecture: "unet_plus_plus"
-  encoder: "efficientnet-b4"
+  encoder: "efficientnet-b0"  # Smaller, faster
   
 training:
-  batch_size: 4
-  num_epochs: 100
+  batch_size: 32  # Can use larger batch with real data
+  num_epochs: 50
   learning_rate: 0.0001
   early_stopping_patience: 10
-  
-num_workers: 2  # Number of workers for data loading
-
-spillover:
-  # Compensation matrix from your Excel notes
-  compensation_matrix:
-    - [1.0, 0.15, 0.05]   # FITC spillover
-    - [0.10, 1.0, 0.08]   # PE spillover
-    - [0.02, 0.05, 1.0]   # RB780 spillover
+  num_workers: 8
