@@ -8,8 +8,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 import segmentation_models_pytorch as smp
 import os
 
-class BD_S8_LightningModule(pl.LightningModule):  # RENAMED to avoid conflict
-    """PyTorch Lightning training module for BD S8 analysis"""
+class BD_S8_LightningModule(pl.LightningModule):
+    """PyTorch Lightning training module with early stopping"""
     
     def __init__(self, model, learning_rate=1e-4, num_classes=5):
         super().__init__()
@@ -111,9 +111,9 @@ class BD_S8_LightningModule(pl.LightningModule):  # RENAMED to avoid conflict
         )
         return {'optimizer': optimizer, 'lr_scheduler': {'scheduler': scheduler, 'interval': 'epoch'}}
 
-# Function at MODULE LEVEL
+# CRITICAL: AT MODULE LEVEL - NOT INSIDE CLASS!
 def train_real_tiff_data(config):
-    """Train on 555k REAL TIFF files"""
+    """Train on 555k REAL TIFF files with early stopping"""
     import tifffile
     from pathlib import Path
     from torch.utils.data import Dataset, DataLoader
@@ -135,6 +135,7 @@ def train_real_tiff_data(config):
                     'extraction_method': 1, 'viability': 1, 
                     'fresh_frozen': 0, 'fixed': 1, 'permeabilized': 1
                 }] * len(aml_files))
+                print(f"✅ AML: {len(aml_files)} cells")
             
             # Load Healthy samples
             healthy_dir = Path(root) / 'Healthy BM'
@@ -145,8 +146,9 @@ def train_real_tiff_data(config):
                     'extraction_method': 0, 'viability': 1,
                     'fresh_frozen': 0, 'fixed': 1, 'permeabilized': 1
                 }] * len(healthy_files))
+                print(f"✅ Healthy: {len(healthy_files)} cells")
             
-            print(f"✅ Loaded {len(self.images)} REAL cells")
+            print(f"📊 Total {mode}: {len(self.images)} REAL cells")
         
         def __len__(self):
             return len(self.images)
@@ -171,18 +173,17 @@ def train_real_tiff_data(config):
                 new_img[..., :channels] = img[..., :channels]
                 img = new_img
             
-            # Resize to 512x512
+            # Resize and normalize
             img = cv2.resize(img.astype(np.float32), (512, 512))
-            
-            # Normalize
             img = img.astype(np.float32)
             if img.max() > 1:
                 img = img / 65535.0
             
-            # Convert to tensor (CHW format)
             img = torch.from_numpy(img).permute(2, 0, 1)
             
             return {'image': img, 'labels': self.labels_dict[idx]}
+    
+    print("\n🚀 Training on 555,053 REAL TIFF files!")
     
     # Create datasets
     train_dataset = RealTIFFDataset(max_samples=20000, mode='train')
@@ -192,29 +193,38 @@ def train_real_tiff_data(config):
     val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False, num_workers=4)
     
     # Model
-    model = BD_S8_Model(num_classes=5)  # Removed num_channels
-    lightning_model = BD_S8_LightningModule(model, config['training']['learning_rate'])  # FIXED: Using renamed class
+    model = BD_S8_Model(num_classes=5)
+    lightning_model = BD_S8_LightningModule(model, config['training']['learning_rate'])
     
-    # Checkpoint
+    # Callbacks with EARLY STOPPING
     checkpoint = ModelCheckpoint(
         dirpath='models/',
         filename='real_tiff_{epoch}_{val_acc:.3f}',
         monitor='val_acc',
         mode='max',
-        save_top_k=3
+        save_top_k=3,
+        save_last=True
     )
     
-    # Trainer
+    # EARLY STOPPING - Will stop when val_acc doesn't improve
+    early_stop = EarlyStopping(
+        monitor='val_acc',
+        patience=10,  # Stop after 10 epochs of no improvement
+        mode='max',
+        verbose=True
+    )
+    
+    # Trainer with early stopping
     trainer = pl.Trainer(
         max_epochs=50,
-        callbacks=[checkpoint],
+        callbacks=[checkpoint, early_stop],  # Added early stopping
         accelerator='auto',
         logger=TensorBoardLogger('lightning_logs', name='real_tiff_training')
     )
     
     trainer.fit(lightning_model, train_loader, val_loader)
     
-    print("✅ Training on REAL TIFFs completed!")
+    print("✅ Training with early stopping completed!")
     return lightning_model
 
 def train_full_model(config):
@@ -226,7 +236,7 @@ def train_full_model(config):
         print("\n🚀 Using 555,053 REAL TIFF files!")
         return train_real_tiff_data(config)
     else:
-        # Fallback to synthetic data (your old code)
+        # Fallback to synthetic data
         from src.data_loader import get_dataloader
         from src.models import BD_S8_Model
         
@@ -248,7 +258,7 @@ def train_full_model(config):
         )
         
         model = BD_S8_Model(num_classes=config['model']['num_classes'])
-        lightning_model = BD_S8_LightningModule(model, config['training']['learning_rate'])  # Using renamed class
+        lightning_model = BD_S8_LightningModule(model, config['training']['learning_rate'])
         
         checkpoint = ModelCheckpoint(
             dirpath='models/',
@@ -259,10 +269,18 @@ def train_full_model(config):
             save_last=True
         )
         
+        # EARLY STOPPING for synthetic data too
+        early_stop = EarlyStopping(
+            monitor='val_dice',
+            patience=config['training'].get('early_stopping_patience', 10),
+            mode='max',
+            verbose=True
+        )
+        
         trainer = pl.Trainer(
             max_epochs=config['training']['num_epochs'],
             accelerator='auto',
-            callbacks=[checkpoint],
+            callbacks=[checkpoint, early_stop],  # Added early stopping
             logger=TensorBoardLogger('lightning_logs')
         )
         

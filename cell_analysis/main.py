@@ -1,45 +1,54 @@
-# main.py - Updated for REAL TIFF data
-#!/usr/bin/env python
-"""BD S8 Cell Analysis Pipeline - REAL Data Version"""
-
-import os
+# main.py
+import argparse
 import yaml
 import torch
-import argparse
+import os
 
 def main():
-    parser = argparse.ArgumentParser(description='BD S8 Analysis Pipeline')
-    parser.add_argument('--mode', choices=['train', 'inference'], default='train')
-    parser.add_argument('--use-real-data', action='store_true', default=True,
-                       help='Use 555k REAL TIFF data instead of synthetic')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--mode', choices=['test','train','both','inference'], default='train')
     parser.add_argument('--config', default='config/config.yaml')
     
     args = parser.parse_args()
     
-    # Load config
-    config = {}
-    if os.path.exists(args.config):
-        with open(args.config, 'r') as f:
-            config = yaml.safe_load(f)
+    config = {
+        'data': {
+            'excel_path': 'data/List of S8 data.xlsx',
+            'data_folder': 'data/',
+            'output_dir': 'outputs/'
+        },
+        'model': {
+            'num_classes': 5,
+            'num_channels': 3,
+            'encoder': 'efficientnet-b4'
+        },
+        'training': {
+            'batch_size': 32,  # Larger batch for real data
+            'num_epochs': 50,
+            'learning_rate': 1e-4,
+            'early_stopping_patience': 10
+        }
+    }
     
-    # Default values
-    config.setdefault('data', {}).setdefault('use_real_data', True)
-    config.setdefault('training', {}).setdefault('batch_size', 32)
+    # Load config if exists
+    if os.path.exists(args.config):
+        try:
+            with open(args.config, 'r') as f:
+                loaded_config = yaml.safe_load(f)
+                if loaded_config:
+                    config.update(loaded_config)
+        except Exception as e:
+            print(f"Warning: Could not load config: {e}")
     
     print("\n" + "="*60)
-    print("🧬 BD S8 Cell Analysis Pipeline")
+    print("🧬 BD S8 AML Classification - REAL DATA")
     print("="*60)
     print(f"Mode: {args.mode}")
-    print(f"Using: {'555k REAL TIFF data' if config['data']['use_real_data'] else 'Synthetic data'}")
     print(f"Device: {'CUDA' if torch.cuda.is_available() else 'CPU'}")
     
     if args.mode == 'train':
-        if config['data']['use_real_data']:
-            from src.train import train_real_tiff_data
-            model = train_real_tiff_data(config)
-        else:
-            from src.train import train_full_model
-            model = train_full_model(config)
+        from src.train import train_full_model
+        model = train_full_model(config)
         print("✅ Training completed!")
         
     elif args.mode == 'inference':
