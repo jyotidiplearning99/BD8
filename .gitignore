@@ -45,4 +45,12 @@ models/
 /.vscode
 /cell_analysis/javabridge
 /cell_analysis/PS1.cvw
-/cell_analysis/data/PS1.cvw
+/cell_analysis/data/PS1.cvw# huge artifacts & junk
+cell_analysis/cvw_to_extract.tar.gz
+cell_analysis/logs/
+cell_analysis/.venv-gpu/
+.venv*/
+__pycache__/
+*.npz
+*.out
+*.tar.gz
