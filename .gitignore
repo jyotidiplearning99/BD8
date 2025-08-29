@@ -17,8 +17,7 @@ tools/
 javabridge/
 
 # Virtual environments
-.venv/
-venv/
+*.venv
 env/
 
 # Python
@@ -28,8 +27,19 @@ __pycache__/
 
 # Outputs
 outputs/
-lightning_logs/
+JDS_PROJECT/cell_analysis/lightning_logs/
 models/
 
 # System
 .DS_Store
+.models
+.data
+.splits
+
+/cell_analysis/logs
+/cell_analysis/lightning_logs
+/cell_analysis/checkpoints
+/cell_analysis/splits
+/cell_analysis/--gres=gpu:a100:1
+
+/.vscode
