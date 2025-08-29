@@ -1,0 +1,106 @@
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045002.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045018.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045044.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045048.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045009.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045029.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045023.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045042.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045050.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045006.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045047.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045038.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045031.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045041.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045001.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045032.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045027.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045046.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045036.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045025.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045011.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045003.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045034.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045040.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045026.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045045.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045012.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045004.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045030.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045005.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045016.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045015.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045033.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045028.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045022.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045008.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045035.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045019.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045039.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045000.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045049.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045013.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045052.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045037.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045010.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045020.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045017.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045021.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045007.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045051.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045043.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045024.tiff
+/scratch/project_2010376/BDS8/BDS8_data/AML/PS1_images_20250825_1202_00/00040000/PS1_00045014.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00045812.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00030000/BM_2025_07-05-2025_notreatment_00034977.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00047411.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00020000/BM_2025_07-05-2025_notreatment_00026710.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00020000/BM_2025_07-05-2025_notreatment_00026638.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00030000/BM_2025_07-05-2025_notreatment_00039661.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00048523.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00030000/BM_2025_07-05-2025_notreatment_00033756.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00015932.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00013279.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00010252.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00020000/BM_2025_07-05-2025_notreatment_00025941.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00000000/BM_2025_07-05-2025_notreatment_00008283.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00043758.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00020000/BM_2025_07-05-2025_notreatment_00022571.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00020000/BM_2025_07-05-2025_notreatment_00029120.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00017190.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00049032.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00044615.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00000000/BM_2025_07-05-2025_notreatment_00009610.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00041173.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00048427.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00012425.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00020000/BM_2025_07-05-2025_notreatment_00024464.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00030000/BM_2025_07-05-2025_notreatment_00037435.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00020000/BM_2025_07-05-2025_notreatment_00028695.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00030000/BM_2025_07-05-2025_notreatment_00033442.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00000000/BM_2025_07-05-2025_notreatment_00007709.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00030000/BM_2025_07-05-2025_notreatment_00036002.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00030000/BM_2025_07-05-2025_notreatment_00032192.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00044443.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00010481.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00020000/BM_2025_07-05-2025_notreatment_00028469.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00013333.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00047268.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00010651.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00048568.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00015099.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00042623.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00020000/BM_2025_07-05-2025_notreatment_00025153.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00012139.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00040074.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00030000/BM_2025_07-05-2025_notreatment_00032836.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00030000/BM_2025_07-05-2025_notreatment_00034037.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00040000/BM_2025_07-05-2025_notreatment_00043478.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00000000/BM_2025_07-05-2025_notreatment_00007488.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00014605.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00000000/BM_2025_07-05-2025_notreatment_00005165.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00011930.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00013147.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00010000/BM_2025_07-05-2025_notreatment_00013259.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00000000/BM_2025_07-05-2025_notreatment_00006117.tiff
+/scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment_images_20250825_1337_11/00020000/BM_2025_07-05-2025_notreatment_00027127.tiff

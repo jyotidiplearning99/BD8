@@ -1,4 +1,4 @@
-# src/train.py
+# src/train.py - FIXED VERSION
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,9 +7,100 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
 import segmentation_models_pytorch as smp
 import os
+from pathlib import Path
+import numpy as np
+import cv2
+import tifffile
+from torch.utils.data import Dataset, DataLoader
+pl.seed_everything(42, workers=True)
+# CRITICAL: RealTIFFDataset at MODULE LEVEL for importability
+class RealTIFFDataset(Dataset):
+    """Dataset for 555k REAL TIFF files with proper disjoint splits"""
+    def __init__(
+        self,
+        root='/scratch/project_2010376/BDS8/BDS8_data',
+        mode='train',
+        skip_holdout=20000,      # reserve first 20k per class for holdout
+        train_count=30000,       # number used for training
+        val_count=5000,          # number used for validation
+        test_count=5000          # used for mode='test'
+    ):
+        self.images, self.labels_dict = [], []
+        root = Path(root)
+
+        def select_block(files, start, count):
+            files = sorted(files)
+            end = start + count
+            return files[start:end]
+
+        for class_name, label in [('AML', 1), ('Healthy BM', 0)]:
+            #files = list((root / class_name).rglob('*.tiff'))
+            files = list((root / class_name).rglob('*.tif')) + \
+            list((root / class_name).rglob('*.tiff'))
+            # carve disjoint ranges
+            if mode == 'train':
+                sel = select_block(files, skip_holdout, train_count)
+            elif mode == 'val':
+                sel = select_block(files, skip_holdout + train_count, val_count)
+            elif mode == 'test':
+                start_test = skip_holdout + train_count + val_count
+                sel = select_block(files, start_test, test_count)
+            else:
+                raise ValueError("mode must be 'train' | 'val' | 'test'")
+
+            self.images.extend(sel)
+            self.labels_dict.extend([{
+                'extraction_method': label,
+                'viability': 1, 'fresh_frozen': 0, 'fixed': 1, 'permeabilized': 1
+            }] * len(sel))
+
+        print(f"✅ {mode}: AML={sum('AML' in str(p) for p in self.images)}, "
+              f"Healthy={sum('Healthy BM' in str(p) for p in self.images)}, "
+              f"Total={len(self.images)}")
+    
+    def __len__(self):
+        return len(self.images)
+    
+    def __getitem__(self, idx):
+        img = tifffile.imread(self.images[idx])
+        
+        # Handle different formats
+        if img.ndim == 2:
+            img = np.stack([img]*3, axis=-1)
+        elif img.ndim == 3:
+            if img.shape[0] <= 4:
+                img = np.transpose(img[:3], (1,2,0))
+            elif img.shape[-1] > 3:
+                img = img[..., :3]
+        
+        # Ensure exactly 3 channels
+        if img.shape[-1] != 3:
+            h, w = img.shape[:2]
+            new_img = np.zeros((h, w, 3), dtype=np.float32)
+            channels = min(3, img.shape[-1])
+            new_img[..., :channels] = img[..., :channels]
+            img = new_img
+        
+        # Resize
+        img = cv2.resize(img.astype(np.float32), (512, 512))
+        
+        # CRITICAL FIX: Bit-depth aware normalization
+        img = img.astype(np.float32)
+        mx = float(img.max())
+        if mx > 0:
+            if mx > 255:      # likely uint16
+                img /= 65535.0
+            elif mx > 1:      # likely uint8
+                img /= 255.0
+            else:
+                pass          # already 0..1
+        
+        img = torch.from_numpy(img).permute(2, 0, 1)
+        
+        return {'image': img, 'labels': self.labels_dict[idx]}
 
 class BD_S8_LightningModule(pl.LightningModule):
-    """PyTorch Lightning training module with early stopping"""
+    """PyTorch Lightning training module with all fixes"""
     
     def __init__(self, model, learning_rate=1e-4, num_classes=5):
         super().__init__()
@@ -46,7 +137,9 @@ class BD_S8_LightningModule(pl.LightningModule):
         )
         
         extraction_loss = self.ce_loss(outputs['extraction'], extraction_labels)
-        total_loss = seg_loss + 0.3 * extraction_loss
+        
+        # FIX: Weight extraction more than segmentation
+        total_loss = 0.1 * seg_loss + 1.0 * extraction_loss
         
         extraction_pred = torch.argmax(outputs['extraction'], dim=1)
         extraction_acc = (extraction_pred == extraction_labels).float().mean()
@@ -111,124 +204,60 @@ class BD_S8_LightningModule(pl.LightningModule):
         )
         return {'optimizer': optimizer, 'lr_scheduler': {'scheduler': scheduler, 'interval': 'epoch'}}
 
-# CRITICAL: AT MODULE LEVEL - NOT INSIDE CLASS!
 def train_real_tiff_data(config):
-    """Train on 555k REAL TIFF files with early stopping"""
-    import tifffile
-    from pathlib import Path
-    from torch.utils.data import Dataset, DataLoader
-    import numpy as np
-    import cv2
+    """Train on 555k REAL TIFF files with proper splits"""
     from src.models import BD_S8_Model
-    
-    class RealTIFFDataset(Dataset):
-        def __init__(self, root='/scratch/project_2010376/BDS8/BDS8_data', max_samples=10000, mode='train'):
-            self.images = []
-            self.labels_dict = []
-            
-            # Load AML samples
-            aml_dir = Path(root) / 'AML'
-            if aml_dir.exists():
-                aml_files = list(aml_dir.glob('**/*.tiff'))[:max_samples//2]
-                self.images.extend(aml_files)
-                self.labels_dict.extend([{
-                    'extraction_method': 1, 'viability': 1, 
-                    'fresh_frozen': 0, 'fixed': 1, 'permeabilized': 1
-                }] * len(aml_files))
-                print(f"✅ AML: {len(aml_files)} cells")
-            
-            # Load Healthy samples
-            healthy_dir = Path(root) / 'Healthy BM'
-            if healthy_dir.exists():
-                healthy_files = list(healthy_dir.glob('**/*.tiff'))[:max_samples//2]
-                self.images.extend(healthy_files)
-                self.labels_dict.extend([{
-                    'extraction_method': 0, 'viability': 1,
-                    'fresh_frozen': 0, 'fixed': 1, 'permeabilized': 1
-                }] * len(healthy_files))
-                print(f"✅ Healthy: {len(healthy_files)} cells")
-            
-            print(f"📊 Total {mode}: {len(self.images)} REAL cells")
-        
-        def __len__(self):
-            return len(self.images)
-        
-        def __getitem__(self, idx):
-            img = tifffile.imread(self.images[idx])
-            
-            # Handle different formats
-            if img.ndim == 2:
-                img = np.stack([img]*3, axis=-1)
-            elif img.ndim == 3:
-                if img.shape[0] <= 4:
-                    img = np.transpose(img[:3], (1,2,0))
-                elif img.shape[-1] > 3:
-                    img = img[..., :3]
-            
-            # Ensure exactly 3 channels
-            if img.shape[-1] != 3:
-                h, w = img.shape[:2]
-                new_img = np.zeros((h, w, 3), dtype=np.float32)
-                channels = min(3, img.shape[-1])
-                new_img[..., :channels] = img[..., :channels]
-                img = new_img
-            
-            # Resize and normalize
-            img = cv2.resize(img.astype(np.float32), (512, 512))
-            img = img.astype(np.float32)
-            if img.max() > 1:
-                img = img / 65535.0
-            
-            img = torch.from_numpy(img).permute(2, 0, 1)
-            
-            return {'image': img, 'labels': self.labels_dict[idx]}
     
     print("\n🚀 Training on 555,053 REAL TIFF files!")
     
-    # Create datasets
-    train_dataset = RealTIFFDataset(max_samples=20000, mode='train')
-    val_dataset = RealTIFFDataset(max_samples=4000, mode='val')
+    # Create datasets with proper splits
+    train_dataset = RealTIFFDataset(mode='train', skip_holdout=20000, train_count=30000, val_count=5000)
+    val_dataset = RealTIFFDataset(mode='val', skip_holdout=20000, train_count=30000, val_count=5000)
     
-    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False, num_workers=4)
+    # DataLoaders with optimizations
+    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True,
+                            num_workers=4, pin_memory=True, persistent_workers=True)
+    val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False,
+                          num_workers=4, pin_memory=True, persistent_workers=True)
     
     # Model
     model = BD_S8_Model(num_classes=5)
     lightning_model = BD_S8_LightningModule(model, config['training']['learning_rate'])
     
-    # Callbacks with EARLY STOPPING
+    # Callbacks
     checkpoint = ModelCheckpoint(
         dirpath='models/',
         filename='real_tiff_{epoch}_{val_acc:.3f}',
         monitor='val_acc',
         mode='max',
         save_top_k=3,
-        save_last=True
+        save_last=True  # CRITICAL: Add this
     )
     
-    # EARLY STOPPING - Will stop when val_acc doesn't improve
     early_stop = EarlyStopping(
         monitor='val_acc',
-        patience=10,  # Stop after 10 epochs of no improvement
+        patience=10,
         mode='max',
         verbose=True
     )
     
-    # Trainer with early stopping
+    # Trainer
     trainer = pl.Trainer(
         max_epochs=50,
-        callbacks=[checkpoint, early_stop],  # Added early stopping
-        accelerator='auto',
+        devices=1,
+        precision="16-mixed",
+        callbacks=[checkpoint, early_stop],
+        accelerator='gpu' if torch.cuda.is_available() else 'cpu',
         logger=TensorBoardLogger('lightning_logs', name='real_tiff_training')
     )
     
     trainer.fit(lightning_model, train_loader, val_loader)
     
-    print("✅ Training with early stopping completed!")
+    print("✅ Training on REAL TIFFs completed!")
     return lightning_model
 
 def train_full_model(config):
-    """Main training function"""
+    """Main training function - MUST be at module level"""
     
     # Check if REAL data exists
     real_data_path = '/scratch/project_2010376/BDS8/BDS8_data'
@@ -236,6 +265,7 @@ def train_full_model(config):
         print("\n🚀 Using 555,053 REAL TIFF files!")
         return train_real_tiff_data(config)
     else:
+        
         # Fallback to synthetic data
         from src.data_loader import get_dataloader
         from src.models import BD_S8_Model
