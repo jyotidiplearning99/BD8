@@ -43,3 +43,4 @@ models/
 /cell_analysis/--gres=gpu:a100:1
 
 /.vscode
+/cell_analysis/javabridge
