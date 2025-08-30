@@ -50,15 +50,15 @@ except ImportError:
 
 class FCSProcessor:
     """Process FCS files with proper logging and gate transparency"""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  cofactor: float = 150,
                  log_dir: Path = Path("outputs/phase2/logs")):
-        
+
         self.cofactor = cofactor
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self.marker_mappings = {
             'CD34': ['CD34-BV421', 'CD34-V450', 'CD34-PerCP', 'CD34'],
             'CD117': ['CD117-PE', 'CD117-APC', 'cKit', 'CD117'],
@@ -71,13 +71,14 @@ class FCSProcessor:
             'CD15': ['CD15-APC', 'CD15-FITC', 'CD15'],
             'CD16': ['CD16-PE', 'CD16-APC-Cy7', 'CD16']
         }
-        
+
         self.last_fcs = None
-        
+
     def load_fcs(self, fcs_path: Path) -> pd.DataFrame:
         """Load FCS file with proper marker resolution"""
         self.last_fcs = fcs_path.stem
-        
+        meta = None  # ensure defined even if the flowkit path is used
+
         try:
             sample = fk.Sample(str(fcs_path))
             if sample.compensation is not None:
@@ -90,43 +91,90 @@ class FCSProcessor:
             df = pd.DataFrame(data)
             numeric_cols = df.select_dtypes(include=[np.number]).columns
             df[numeric_cols] = np.arcsinh(df[numeric_cols] / self.cofactor)
-        
-        df = self._standardize_columns(df)
+
+        # Keep raw column list for correct $P{i} indexing
+        raw_cols = df.columns.tolist()
+        print("  Raw FCS columns (first 20):", raw_cols[:20])
+
+        # Inspect & log channel ↔ marker annotations (BEFORE renaming)
+        channel_rows = []
+        try:
+            for i, col in enumerate(raw_cols, start=1):
+                pnn = meta.get(f"$P{i}N") if meta is not None else None
+                pns = meta.get(f"$P{i}S") if meta is not None else None
+                channel_rows.append({"index": i, "data_col": col, "$PnN": pnn, "$PnS": pns})
+        except Exception:
+            pass
+
+        print("  Channel → marker preview (first 30):")
+        for r in channel_rows[:30]:
+            print(f"    {r['index']:>3}  {r['data_col']:<28}  $PnS:{str(r['$PnS'])[:40]}  $PnN:{str(r['$PnN'])[:40]}")
+
+        # Save a CSV for full review
+        try:
+            import csv as _csv
+            map_csv = self.log_dir / f"{fcs_path.stem}_channel_map.csv"
+            with open(map_csv, "w", newline="") as f:
+                w = _csv.DictWriter(f, fieldnames=["index", "data_col", "$PnS", "$PnN"])
+                w.writeheader()
+                w.writerows(channel_rows)
+            print(f"  ↳ Full channel map saved to: {map_csv}")
+        except Exception as _e:
+            print(f"  (Could not write channel map CSV: {_e})")
+
+        # Now standardize using both col text and $PnS/$PnN
+        df = self._standardize_columns(df, meta=meta)
+        print("  Standardized columns (first 20):", df.columns.tolist()[:20])
+
         self._log_marker_mapping(df, fcs_path)
-        
         return df
-    
-    def _standardize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Map channels to standard marker names"""
+
+    def _standardize_columns(self, df: pd.DataFrame, meta: Optional[dict] = None) -> pd.DataFrame:
+        """Map channels to standard marker names using column text and $PnS/$PnN."""
         new_columns = {}
-        
+
+        # Build search text for each column (col name + $PnS + $PnN)
+        search_texts = {}
+        for i, col in enumerate(df.columns, start=1):
+            pieces = [col]
+            if meta is not None:
+                pnn = meta.get(f"$P{i}N")
+                pns = meta.get(f"$P{i}S")
+                if pnn:
+                    pieces.append(str(pnn))
+                if pns:
+                    pieces.append(str(pns))
+            search_texts[col] = " ".join(pieces).upper()
+
         for col in df.columns:
-            col_upper = col.upper()
-            
+            text = search_texts[col]
+            matched = False
             for marker, variants in self.marker_mappings.items():
-                for variant in variants:
-                    if variant.upper() in col_upper:
+                for variant in variants + [marker]:  # check variants and canonical
+                    if variant.upper() in text:
                         new_columns[col] = marker
+                        matched = True
                         break
-                if col in new_columns:
+                if matched:
                     break
-            
-            if col not in new_columns:
-                if any(x in col_upper for x in ['FSC', 'SSC', 'TIME']):
+
+            # keep common non-marker channels if nothing matched
+            if not matched:
+                if any(x in text for x in ['FSC', 'SSC', 'TIME', 'LIGHTLOSS']):
                     new_columns[col] = col
-        
+
         df = df.rename(columns=new_columns)
         df = df.loc[:, ~df.columns.duplicated()]
-        
+
         return df
-    
+
     def _log_marker_mapping(self, df: pd.DataFrame, fcs_path: Path):
         """Log exact marker resolution"""
         used = {}
         for marker in self.marker_mappings.keys():
             hit = marker if marker in df.columns else None
             used[marker] = hit
-        
+
         log_file = self.log_dir / f"{fcs_path.stem}_marker_map.json"
         with open(log_file, "w") as f:
             json.dump({
@@ -136,28 +184,28 @@ class FCSProcessor:
                 'all_columns': list(df.columns),
                 'cofactor': self.cofactor
             }, f, indent=2)
-    
+
     def gate_blast_population(self, df: pd.DataFrame) -> Tuple[np.ndarray, Dict]:
         """Define blast gate with threshold logging and degeneracy check"""
         n = len(df)
         gate = np.ones(n, dtype=bool)
         thresholds = {}
         gates_applied = []
-        
+
         if 'CD34' in df.columns:
             threshold = np.nanpercentile(df['CD34'].dropna(), 75)
             thresholds['CD34_P75'] = float(threshold)
             gate &= df['CD34'].fillna(-np.inf) > threshold
             gates_applied.append('CD34+')
             print(f"  CD34+ gate: {gate.sum()}/{n} cells")
-        
+
         if 'CD117' in df.columns:
             threshold = np.nanpercentile(df['CD117'].dropna(), 70)
             thresholds['CD117_P70'] = float(threshold)
             gate &= df['CD117'].fillna(-np.inf) > threshold
             gates_applied.append('CD117+')
             print(f"  CD34+CD117+ gate: {gate.sum()}/{n} cells")
-        
+
         if 'CD38' in df.columns:
             low = np.nanpercentile(df['CD38'].dropna(), 20)
             high = np.nanpercentile(df['CD38'].dropna(), 60)
@@ -166,22 +214,22 @@ class FCSProcessor:
             gate &= (df['CD38'].fillna(-np.inf) > low) & (df['CD38'].fillna(np.inf) < high)
             gates_applied.append('CD38dim')
             print(f"  CD34+CD117+CD38dim gate: {gate.sum()}/{n} cells")
-        
+
         if 'HLA-DR' in df.columns:
             threshold = np.nanpercentile(df['HLA-DR'].dropna(), 60)
             thresholds['HLA-DR_P60'] = float(threshold)
             gate &= df['HLA-DR'].fillna(-np.inf) > threshold
             gates_applied.append('HLA-DR+')
             print(f"  Full blast gate: {gate.sum()}/{n} cells")
-        
+
         # Check for degenerate gates
         frac = float(gate.mean())
         if frac < 0.005 or frac > 0.995:
             print(f"  ⚠️ Blast gate is degenerate ({frac:.2%}); may need adjustment")
             thresholds['_degenerate'] = True
-        
+
         print(f"✓ Blast population: {gate.sum()}/{n} cells ({100*frac:.1f}%)")
-        
+
         # Save thresholds
         threshold_file = self.log_dir / f"{self.last_fcs}_blast_thresholds.json"
         with open(threshold_file, "w") as f:
@@ -194,83 +242,83 @@ class FCSProcessor:
                 'total_cells': int(n),
                 'gate_percentage': float(frac * 100)
             }, f, indent=2)
-        
+
         return gate, thresholds
 
 
 class MorphoPhenotypicAnalyzer:
     """Extract and combine morphological and phenotypic features"""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  model_path: str = 'models/last.ckpt',
                  cache_dir: Path = Path("outputs/phase2/feat_cache")):
-        
+
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self.model = self._load_model(model_path)
         self.model.eval()
-        
+
     def _load_model(self, model_path: Path) -> nn.Module:
         """Load trained model for feature extraction"""
         from src.models import BD_S8_Model
-        
+
         model = BD_S8_Model(num_classes=5).to(self.device)
         checkpoint = torch.load(model_path, map_location=self.device)
         state_dict = checkpoint.get('state_dict', checkpoint)
-        
+
         clean_dict = {}
         for k, v in state_dict.items():
             if k.startswith('model.'):
                 clean_dict[k[6:]] = v
             else:
                 clean_dict[k] = v
-        
+
         model.load_state_dict(clean_dict, strict=False)
         self.feature_extractor = model.encoder
-        
+
         return model
-    
-    def extract_morphological_features(self, 
-                                      image_paths: List[Path],
-                                      batch_size: int = 32) -> np.ndarray:
+
+    def extract_morphological_features(self,
+                                       image_paths: List[Path],
+                                       batch_size: int = 32) -> np.ndarray:
         """Extract CNN features with collision-proof caching and mixed precision"""
-        
+
         features_list = []
         batch_images = []
         to_save_paths = []
-        
+
         with torch.no_grad():
             for path in image_paths:
                 # Collision-proof cache keys
                 rel = str(Path(path).resolve())
                 hid = hashlib.sha1(rel.encode()).hexdigest()[:10]
                 cache_path = self.cache_dir / f"{Path(path).stem}_{hid}.npy"
-                
+
                 if cache_path.exists():
                     features_list.append(np.load(cache_path))
                 else:
                     img = self._load_and_preprocess_image(path)
                     batch_images.append(img)
                     to_save_paths.append(cache_path)
-                    
+
                     if len(batch_images) == batch_size:
                         batch_tensor = torch.stack(batch_images).to(self.device)
-                        
+
                         # Mixed precision for A100s
                         ctx = (torch.amp.autocast(device_type='cuda', dtype=torch.float16)
                                if torch.cuda.is_available() else contextlib.nullcontext())
                         with ctx:
                             features = self.feature_extractor(batch_tensor).float().cpu().numpy()
-                        
+
                         for feat, save_path in zip(features, to_save_paths):
                             np.save(save_path, feat)
-                        
+
                         features_list.extend(list(features))
                         batch_images = []
                         to_save_paths = []
-            
+
             # Process remainder
             if batch_images:
                 batch_tensor = torch.stack(batch_images).to(self.device)
@@ -278,29 +326,29 @@ class MorphoPhenotypicAnalyzer:
                        if torch.cuda.is_available() else contextlib.nullcontext())
                 with ctx:
                     features = self.feature_extractor(batch_tensor).float().cpu().numpy()
-                
+
                 for feat, save_path in zip(features, to_save_paths):
                     np.save(save_path, feat)
-                
+
                 features_list.extend(list(features))
-        
+
         return np.vstack(features_list) if features_list else np.array([])
-    
+
     def _load_and_preprocess_image(self, path: Path) -> torch.Tensor:
         """Load and preprocess consistent with training"""
         img = tifffile.imread(path)
-        
+
         if img.ndim == 2:
             img = np.stack([img]*3, axis=-1)
         elif img.ndim == 3 and img.shape[0] <= 4:
             img = np.transpose(img[:3], (1, 2, 0))
-        
+
         if img.shape[-1] != 3:
             h, w = img.shape[:2]
             new_img = np.zeros((h, w, 3), dtype=np.float32)
             new_img[..., :min(3, img.shape[-1])] = img[..., :min(3, img.shape[-1])]
             img = new_img
-        
+
         img = cv2.resize(img.astype(np.float32), (512, 512))
         img = img.astype(np.float32)
         mx = float(img.max())
@@ -309,25 +357,25 @@ class MorphoPhenotypicAnalyzer:
                 img /= 65535.0
             elif mx > 1:
                 img /= 255.0
-        
+
         return torch.from_numpy(img).permute(2, 0, 1)
 
 
 class Phase2Pipeline:
     """Main pipeline with all corrections"""
-    
+
     def __init__(self,
                  image_dir: Path = Path('/scratch/project_2010376/BDS8/BDS8_data'),
                  fcs_dir: Path = Path('/scratch/project_2010376/BDS8/FCS_data'),
                  model_path: str = 'models/last.ckpt',
                  output_dir: Path = Path('outputs/phase2'),
                  config: Optional[Dict] = None):
-        
+
         self.image_dir = Path(image_dir)
         self.fcs_dir = Path(fcs_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Config with all knobs exposed
         self.config = config or {}
         self.cofactor = self.config.get('arcsinh_cofactor', 150)
@@ -336,7 +384,7 @@ class Phase2Pipeline:
         self.max_cells_per_sample = self.config.get('max_cells_per_sample', 1000)
         self.max_tsne_samples = self.config.get('max_tsne_samples', 20000)
         self.dbscan_eps = self.config.get('dbscan_eps', 1.5)
-        
+
         self.fcs_processor = FCSProcessor(
             cofactor=self.cofactor,
             log_dir=self.output_dir / "logs"
@@ -345,33 +393,33 @@ class Phase2Pipeline:
             model_path=model_path,
             cache_dir=self.output_dir / "feat_cache"
         )
-    
-    def process_sample(self, 
-                      sample_id: str,
-                      sample_data: Dict) -> Dict:
+
+    def process_sample(self,
+                       sample_id: str,
+                       sample_data: Dict) -> Dict:
         """Process single sample with all corrections and safety checks"""
-        
+
         print(f"\n{'='*60}")
         print(f"Processing sample: {sample_id}")
         print(f"{'='*60}")
-        
+
         results = {
             'sample_id': sample_id,
             'sample_type': sample_data['sample_type']
         }
-        
+
         # 1. Load FCS
         print("\n📊 Loading FCS data...")
         fcs_df = self.fcs_processor.load_fcs(sample_data['fcs_path'])
         print(f"  Loaded {len(fcs_df)} cells with {len(fcs_df.columns)} markers")
-        
+
         # 2. Apply gates
         print("\n🔬 Applying gates...")
         blast_gate, blast_thresholds = self.fcs_processor.gate_blast_population(fcs_df)
-        
+
         results['gates'] = {'blast': blast_gate}
         results['thresholds'] = {'blast': blast_thresholds}
-        
+
         # Handle no mapped markers gracefully
         marker_cols = [c for c in fcs_df.columns if c in self.fcs_processor.marker_mappings]
         if not marker_cols:
@@ -380,20 +428,20 @@ class Phase2Pipeline:
         else:
             phenotypic_df = fcs_df[marker_cols].copy()
             spec_summary_vec = phenotypic_df.median(numeric_only=True).values
-        
+
         print(f"  Phenotypic summary: {len(spec_summary_vec)} features (sample-level median)")
-        
+
         # 4. Process images
         image_paths = sample_data['image_paths']
         if len(image_paths) > self.max_cells_per_sample:
             random.seed(SEED)
             image_paths = random.sample(image_paths, self.max_cells_per_sample)
-        
+
         print(f"\n🖼️ Extracting features from {len(image_paths)} images...")
         morphological_features = self.morpho_analyzer.extract_morphological_features(
             image_paths, batch_size=32
         )
-        
+
         # FIX 2: Handle zero usable images gracefully
         n_cells = len(morphological_features)
         if n_cells == 0:
@@ -412,10 +460,10 @@ class Phase2Pipeline:
                 "tsne_n": 0
             })
             return results
-        
+
         # 5. Broadcast summary to image count
         phenotypic_features = np.repeat(spec_summary_vec[None, :], n_cells, axis=0)
-        
+
         # Gate fractions (sample-level)
         gate_fractions = {}
         for gate_name, gate_mask in results['gates'].items():
@@ -424,43 +472,44 @@ class Phase2Pipeline:
                 print(f"  ⚠️ Gate '{gate_name}' is degenerate ({frac:.2%}); excluding from summaries.")
             else:
                 gate_fractions[gate_name] = frac
-        
+
         results['gate_fractions'] = gate_fractions
         print(f"\n📊 Gate fractions (sample-level): {gate_fractions}")
-        
+
         # 6. Combine features
         print("\n🎯 Combining morphological and phenotypic features...")
         from sklearn.preprocessing import StandardScaler
-        
+
         scaler_morph = StandardScaler()
         morph_norm = scaler_morph.fit_transform(morphological_features)
-        
+
         scaler_phen = StandardScaler()
         phen_norm = scaler_phen.fit_transform(phenotypic_features)
-        
+
         alpha = 0.6
         combined_features = np.hstack([
-            alpha * morph_norm ,
-            (1 - alpha) * phen_norm])
-        
+            alpha * morph_norm,
+            (1 - alpha) * phen_norm
+        ])
+
         print(f"  Combined shape: {combined_features.shape} "
-            f"(morph {morph_norm.shape[1]} + phen {phen_norm.shape[1]})")
-        
+              f"(morph {morph_norm.shape[1]} + phen {phen_norm.shape[1]})")
+
         results['features'] = {
             'morphological': morphological_features,
             'phenotypic_summary': spec_summary_vec,
             'combined': combined_features
         }
-        
+
         # 7. Create embeddings with fail-soft
         print("\n📈 Creating embeddings...")
-        
+
         # UMAP (full data)
         umap_embedding = self._create_embedding_safe(
             combined_features,
             method='umap'
         )
-        
+
         # t-SNE (with safety cap)
         tsne_input = combined_features
         tsne_is_subset = False
@@ -470,43 +519,43 @@ class Phase2Pipeline:
             )
             tsne_input = tsne_input[idx]
             tsne_is_subset = True
-        
+
         tsne_embedding = self._create_embedding_safe(
             tsne_input,
             method='tsne'
         )
-        
+
         results['embeddings'] = {
             'umap': umap_embedding,
             'tsne': tsne_embedding
         }
-        
+
         results['embeddings_meta'] = {
             'tsne_is_subset': tsne_is_subset,
             'tsne_n': int(len(tsne_input))
         }
-        
+
         # 8. Identify subpopulations
         labels = np.ones(n_cells) if sample_data['sample_type'] == 'AML' else np.zeros(n_cells)
-        
+
         subpop_results = self._identify_subpopulations(
             umap_embedding,
             combined_features,
             labels=labels
         )
-        
+
         results['subpopulations'] = subpop_results
-        
+
         # 9. Save results
         self._save_sample_results(results, fcs_df)
-        
+
         # Slack-friendly one-liner
         print(f"✓ {sample_id} ({sample_data['sample_type']}): "
               f"images={n_cells}, FCS={len(fcs_df)}, "
               f"blast={results['gate_fractions'].get('blast', 0.0):.1%}")
-        
+
         return results
-    
+
     def _create_embedding_safe(self, features: np.ndarray, method: str = 'umap') -> np.ndarray:
         """FIX 3: Create embedding with fail-soft on memory issues"""
         try:
@@ -527,71 +576,71 @@ class Phase2Pipeline:
                 )
             else:  # PCA
                 reducer = PCA(n_components=2, random_state=SEED)
-            
+
             return reducer.fit_transform(features)
-            
+
         except Exception as e:
             print(f"⚠️ {method.upper()} failed ({e}); falling back to PCA.")
             reducer = PCA(n_components=2, random_state=SEED)
             return reducer.fit_transform(features)
-    
-    def _identify_subpopulations(self, 
-                                embedding: np.ndarray,
-                                features: np.ndarray,
-                                labels: np.ndarray) -> Dict:
+
+    def _identify_subpopulations(self,
+                                 embedding: np.ndarray,
+                                 features: np.ndarray,
+                                 labels: np.ndarray) -> Dict:
         """Identify subpopulations with improved clustering"""
         from sklearn.cluster import DBSCAN, KMeans
         from sklearn.mixture import GaussianMixture
         from sklearn.metrics import silhouette_score
-        
+
         results = {}
-        
+
         # Adaptive K-means
         if len(embedding) > 100:
             k_values = range(3, min(20, max(4, len(embedding)//50)))
             scores = []
-            
+
             for k in k_values:
                 km = KMeans(n_clusters=k, random_state=SEED, n_init=10)
                 clusters = km.fit_predict(embedding)
                 score = silhouette_score(embedding, clusters)
                 scores.append(score)
-            
+
             if scores:
                 best_k = list(k_values)[np.argmax(scores)]
                 kmeans = KMeans(n_clusters=best_k, random_state=SEED, n_init=10)
                 results['kmeans_clusters'] = kmeans.fit_predict(embedding)
                 print(f"  K-means: k={best_k}, silhouette={max(scores):.3f}")
-        
+
         # Adaptive DBSCAN
         min_samples = max(10, int(sqrt(len(embedding))))
         dbscan = DBSCAN(eps=self.dbscan_eps, min_samples=min_samples)
         results['dbscan_clusters'] = dbscan.fit_predict(embedding)
         n_clusters = len(set(results['dbscan_clusters'])) - (1 if -1 in results['dbscan_clusters'] else 0)
         print(f"  DBSCAN: {n_clusters} clusters (eps={self.dbscan_eps}, min_samples={min_samples})")
-        
+
         # GMM
         n_components = min(8, max(2, len(embedding)//100))
         if n_components > 1:
-            gmm = GaussianMixture(n_components=n_components, 
-                                 covariance_type='full',
-                                 random_state=SEED)
+            gmm = GaussianMixture(n_components=n_components,
+                                  covariance_type='full',
+                                  random_state=SEED)
             results['gmm_clusters'] = gmm.fit_predict(embedding)
             print(f"  GMM: {n_components} components")
-        
+
         return results
-    
+
     def _save_sample_results(self, results: Dict, fcs_df: pd.DataFrame):
         """Save comprehensive results with all formats"""
-        
+
         sample_id = results['sample_id']
-        
+
         # Save embeddings explicitly
-        np.save(self.output_dir / f"{sample_id}_umap.npy", 
+        np.save(self.output_dir / f"{sample_id}_umap.npy",
                 results['embeddings']['umap'])
-        np.save(self.output_dir / f"{sample_id}_tsne.npy", 
+        np.save(self.output_dir / f"{sample_id}_tsne.npy",
                 results['embeddings']['tsne'])
-        
+
         # Save compact JSON
         json_path = self.output_dir / f"{sample_id}_summary.json"
         summary_dict = {
@@ -603,12 +652,12 @@ class Phase2Pipeline:
         }
         with open(json_path, "w") as f:
             json.dump(summary_dict, f, indent=2)
-        
+
         # FIX 4: Save YAML for easier review
         yaml_path = self.output_dir / f"{sample_id}_summary.yaml"
         with open(yaml_path, "w") as f:
             yaml.safe_dump(summary_dict, f, sort_keys=False)
-        
+
         # Enhanced CSV with run metadata
         sample_summary = {
             "sample_id": sample_id,
@@ -624,31 +673,31 @@ class Phase2Pipeline:
             **{f"gate_{k}": v for k, v in results['gate_fractions'].items()}
         }
         self._append_summary_row(sample_summary)
-        
+
         # Save full results
-        np.save(self.output_dir / f"{sample_id}_results.npy", 
+        np.save(self.output_dir / f"{sample_id}_results.npy",
                 results, allow_pickle=True)
-    
+
     def _append_summary_row(self, row: dict):
         """Append row to CSV summary"""
         csv_path = self.output_dir / "sample_summaries.csv"
-        
+
         write_header = not csv_path.exists()
-        
+
         with open(csv_path, "a", newline="") as f:
             w = csv.DictWriter(f, fieldnames=row.keys())
             if write_header:
                 w.writeheader()
             w.writerow(row)
-    
+
     def visualize_results(self, results: Dict):
         """Create visualizations with proper cleanup"""
-        
+
         sample_id = results['sample_id']
         sample_type = results['sample_type']
-        
+
         fig = plt.figure(figsize=(16, 10))
-        
+
         # UMAP colored by sample type
         ax1 = plt.subplot(2, 3, 1)
         embedding = results['embeddings']['umap']
@@ -657,27 +706,27 @@ class Phase2Pipeline:
         ax1.set_title(f'UMAP - {sample_type}')
         ax1.set_xlabel('UMAP 1')
         ax1.set_ylabel('UMAP 2')
-        
+
         # K-means clusters
         ax2 = plt.subplot(2, 3, 2)
         if 'kmeans_clusters' in results['subpopulations']:
             clusters = results['subpopulations']['kmeans_clusters']
-            ax2.scatter(embedding[:, 0], embedding[:, 1], 
-                       c=clusters, cmap='tab20', alpha=0.5, s=1)
+            ax2.scatter(embedding[:, 0], embedding[:, 1],
+                        c=clusters, cmap='tab20', alpha=0.5, s=1)
             ax2.set_title('K-means Clusters')
         ax2.set_xlabel('UMAP 1')
         ax2.set_ylabel('UMAP 2')
-        
+
         # DBSCAN
         ax3 = plt.subplot(2, 3, 3)
         if 'dbscan_clusters' in results['subpopulations']:
             clusters = results['subpopulations']['dbscan_clusters']
-            ax3.scatter(embedding[:, 0], embedding[:, 1], 
-                       c=clusters, cmap='tab20', alpha=0.5, s=1)
+            ax3.scatter(embedding[:, 0], embedding[:, 1],
+                        c=clusters, cmap='tab20', alpha=0.5, s=1)
             ax3.set_title(f'DBSCAN (eps={self.dbscan_eps})')
         ax3.set_xlabel('UMAP 1')
         ax3.set_ylabel('UMAP 2')
-        
+
         # t-SNE (with subset info)
         ax4 = plt.subplot(2, 3, 4)
         tsne_embedding = results['embeddings']['tsne']
@@ -688,11 +737,11 @@ class Phase2Pipeline:
         else:
             title += ')'
         ax4.set_title(title)
-        ax4.scatter(tsne_embedding[:, 0], tsne_embedding[:, 1], 
-                   c='gray', alpha=0.5, s=1)
+        ax4.scatter(tsne_embedding[:, 0], tsne_embedding[:, 1],
+                    c='gray', alpha=0.5, s=1)
         ax4.set_xlabel('t-SNE 1')
         ax4.set_ylabel('t-SNE 2')
-        
+
         # Density
         ax5 = plt.subplot(2, 3, 5)
         from scipy.stats import gaussian_kde
@@ -701,11 +750,11 @@ class Phase2Pipeline:
             z = gaussian_kde(xy)(xy)
             ax5.scatter(embedding[:, 0], embedding[:, 1], c=z, cmap='hot', s=1)
             ax5.set_title('Cell Density')
-        except:
+        except Exception:
             ax5.set_title('Density (skipped)')
         ax5.set_xlabel('UMAP 1')
         ax5.set_ylabel('UMAP 2')
-        
+
         # Gate fractions
         ax6 = plt.subplot(2, 3, 6)
         gate_fractions = results['gate_fractions']
@@ -714,7 +763,7 @@ class Phase2Pipeline:
             fractions = list(gate_fractions.values())
             y_pos = np.arange(len(gates))
             bars = ax6.barh(y_pos, fractions)
-            
+
             for i, (bar, frac) in enumerate(zip(bars, fractions)):
                 if frac > 0.5:
                     bar.set_color('red')
@@ -722,25 +771,25 @@ class Phase2Pipeline:
                     bar.set_color('orange')
                 else:
                     bar.set_color('green')
-            
+
             ax6.set_yticks(y_pos)
             ax6.set_yticklabels(gates)
             ax6.set_xlabel('Fraction')
             ax6.set_title('Gate Fractions (Sample-level)')
             ax6.set_xlim([0, 1])
-        
+
         plt.suptitle(f'Sample {sample_id} - Morpho-Phenotypic Analysis', fontsize=14)
         plt.tight_layout()
-        
+
         save_path = self.output_dir / f'{sample_id}_analysis.png'
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         print(f"✓ Saved visualization to {save_path}")
-        
+
         # Clean up
         plt.close(fig)
-        
+
         return save_path
-    
+
     def match_samples(self) -> Dict[str, Dict]:
         """Match each FCS to images by filename prefix (robust to '_images_...' dirs)."""
         matches = {}
@@ -779,7 +828,7 @@ class Phase2Pipeline:
             if image_paths:
                 # Decide type from folder the FCS lives in
                 image_paths = sorted(set(image_paths))
-                
+
                 pstr = str(fcs_path)
                 if "/AML/" in pstr:
                     sample_type = "AML"
@@ -788,8 +837,8 @@ class Phase2Pipeline:
                 else:
                     # leave as Healthy vs AML by heuristic or Unknown
                     sample_type = (
-                    "Healthy" if "BM" in pstr else "AML" if "AML" in pstr else "Unknown"
-                )
+                        "Healthy" if "BM" in pstr else "AML" if "AML" in pstr else "Unknown"
+                    )
 
                 matches[sample_id] = {
                     "fcs_path": fcs_path,
@@ -802,39 +851,37 @@ class Phase2Pipeline:
 
         return matches
 
-    
-    
     def run_analysis(self, max_samples: int = 5):
         """Run complete Phase 2 analysis"""
-        
+
         print("\n" + "="*60)
         print("🚀 PHASE 2: Morpho-Phenotypic Analysis")
         print("    Building on Phase 1's 79% accurate model")
         print("="*60)
-        
+
         matched_samples = self.match_samples()
-        
+
         if not matched_samples:
             print("❌ No matched samples found!")
             return
-        
+
         all_results = []
-        
+
         for i, (sample_id, sample_data) in enumerate(matched_samples.items()):
             if i >= max_samples:
                 break
-            
+
             try:
                 results = self.process_sample(sample_id, sample_data)
                 all_results.append(results)
                 self.visualize_results(results)
-                
+
             except Exception as e:
                 print(f"❌ Error processing {sample_id}: {e}")
                 import traceback
                 traceback.print_exc()
                 continue
-        
+
         # FIX 1: Print summary with safe column access
         csv_path = self.output_dir / "sample_summaries.csv"
         if csv_path.exists():
@@ -844,7 +891,7 @@ class Phase2Pipeline:
                 cols.append('gate_blast')
             print("\n📊 Summary of processed samples:")
             print(df[cols].to_string(index=False))
-        
+
         print("\n✅ Phase 2 analysis complete!")
         return all_results
 
@@ -860,7 +907,7 @@ if __name__ == "__main__":
         'max_tsne_samples': 20000,
         'dbscan_eps': 1.5,
     }
-    
+
     pipeline = Phase2Pipeline(
         image_dir=Path('/scratch/project_2010376/BDS8/BDS8_data'),
         fcs_dir=Path('/scratch/project_2010376/BDS8/BDS8_data'),
@@ -868,9 +915,9 @@ if __name__ == "__main__":
         output_dir=Path('outputs/phase2'),
         config=config
     )
-    
+
     results = pipeline.run_analysis(max_samples=10)
-    
+
     print("\n✅ Phase 2 complete! Check outputs/phase2/ for:")
     print("  - sample_summaries.csv (aggregate metrics)")
     print("  - *_summary.json/yaml (per-sample metadata)")
