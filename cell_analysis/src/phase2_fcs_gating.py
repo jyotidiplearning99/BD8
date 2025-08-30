@@ -6,9 +6,8 @@ Adds deeper myeloid/blast analysis, robust memory handling, and schema-safe I/O.
 
 import os
 import io
-import gc
-import cv2
 import csv
+import cv2
 import json
 import yaml
 import time
@@ -37,12 +36,6 @@ from sklearn.mixture import GaussianMixture
 from sklearn.metrics import silhouette_score
 import umap
 
-from scipy import stats
-
-import matplotlib
-matplotlib.use('Agg')  # Headless
-import matplotlib.pyplot as plt
-
 warnings.filterwarnings('ignore')
 
 # ============ DETERMINISM ============
@@ -55,37 +48,35 @@ if torch.cuda.is_available():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-# ============ FCS processing (robust imports) ============
-try:
-    import fcsparser
-    HAVE_FCSPARSER = True
-except Exception:
-    fcsparser = None
-    HAVE_FCSPARSER = False
-
+# ============ FCS backends ============
+HAVE_FLOWKIT = False
+HAVE_FCSPARSER = False
 try:
     import flowkit as fk
     HAVE_FLOWKIT = True
 except Exception:
-    fk = None
     HAVE_FLOWKIT = False
 
-if not (HAVE_FCSPARSER or HAVE_FLOWKIT):
-    raise RuntimeError("Neither flowkit nor fcsparser is available. Please install one.")
+try:
+    import fcsparser
+    HAVE_FCSPARSER = True
+except Exception:
+    HAVE_FCSPARSER = False
 
+if not HAVE_FLOWKIT and not HAVE_FCSPARSER:
+    raise RuntimeError("Neither flowkit nor fcsparser is available. Please install at least one reader.")
 
-# -------------------------------
+# ===============================
 # Utils
-# -------------------------------
+# ===============================
+def _safe_csv_writer(fh, fieldnames):
+    """CSV writer with Excel-friendly dialect; avoids delimiter/quote issues."""
+    return csv.DictWriter(fh, fieldnames=fieldnames, extrasaction='ignore')
 
-def _safe_csv_writer(f, fieldnames):
-    # CSV writer with Excel-friendly dialect; avoids delimiter/quote issues
-    return csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
 
-
-# -------------------------------
+# ===============================
 # FCS Processor
-# -------------------------------
+# ===============================
 
 class FCSProcessor:
     """Process FCS files with dynamic channel mapping, gating, and logging"""
@@ -94,25 +85,32 @@ class FCSProcessor:
         self.cofactor = float(cofactor)
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
-
-        # Expanded marker dictionary for deeper myeloid analysis
-        self.marker_mappings = {
-            'CD34' : ['CD34-BV421','CD34-V450','CD34-PerCP','CD34 BV785','CD34 BV786','CD34'],
-            'CD117': ['CD117-PE','CD117-APC','cKit','KIT','CD117'],
-            'CD38' : ['CD38-FITC','CD38-PE-Cy7','CD38 PE-Fire700','CD38'],
-            'HLA-DR':['HLA-DR-APC-Cy7','HLA-DR-V500','HLADR','HLA-DR BV605','HLA-DR'],
-            'CD45' : ['CD45-KO','CD45-V500','CD45 V500','CD45 BV510','CD45'],
-            'CD13' : ['CD13-PE','CD13-FITC','CD13'],
-            'CD33' : ['CD33-PE-Cy7','CD33-APC','CD33'],
-            'CD14' : ['CD14-FITC','CD14-PerCP','CD14 BV650','CD14'],
-            'CD15' : ['CD15-APC','CD15-FITC','CD15'],
-            'CD16' : ['CD16-PE','CD16-APC-Cy7','CD16'],
-            'CD11b': ['CD11b-PE','CD11b-APC','CD11b'],
-            'CD56' : ['CD56-PE','CD56-APC','CD56'],
-            'CD7'  : ['CD7-PE','CD7-APC','CD7'],
-            'MPO'  : ['MPO PE','MPO PE-A','MPO'],
-        }
         self.last_fcs = None
+
+        # Expanded marker dictionary for deeper myeloid analysis + common panel synonyms
+        self.marker_mappings = {
+            'CD34' : ['CD34','CD34-A','CD34 BV785','CD34 BV786','CD34-BV421','CD34-V450','CD34-PerCP'],
+            'CD117': ['CD117','CD117-A','CD117-PE','CD117-APC','CKIT','KIT','cKit'],
+            'CD38' : ['CD38','CD38-A','CD38-FITC','CD38-PE-CY7','CD38 PE-Fire700'],
+            'HLA-DR':['HLA-DR','HLA-DR-A','HLA-DR-APC-CY7','HLA-DR-V500','HLA-DR BV605','HLADR'],
+            'CD45' : ['CD45','CD45-A','CD45-KO','CD45-V500','CD45 V500','CD45 BV510','V500-A','BV510-A'],
+            'CD13' : ['CD13','CD13-A','CD13-PE','CD13-FITC'],
+            'CD33' : ['CD33','CD33-A','CD33-PE-CY7','CD33-APC'],
+            'CD14' : ['CD14','CD14-A','CD14-FITC','CD14-PerCP','CD14 BV650','BV650-A'],
+            'CD15' : ['CD15','CD15-A','CD15-APC','CD15-FITC'],
+            'CD16' : ['CD16','CD16-A','CD16-PE','CD16-APC-CY7','BV570-A'],
+            'CD11b': ['CD11b','CD11b-A','CD11B-PE','CD11B-APC'],
+            'CD56' : ['CD56','CD56-A','CD56-PE','CD56-APC','PE-A'],
+            'CD7'  : ['CD7','CD7-A','CD7-PE','CD7-APC'],
+            'MPO'  : ['MPO','MPO-A','MPO PE','PE*-A'],
+            # lymphoid/context markers that help phenotypic context
+            'CD3'  : ['CD3','CD3-A','BV785*-A','CD3 BV785','CD3-BV785'],
+            'CD4'  : ['CD4','CD4-A','BV421-A','Alexa Fluor 647-A','CD4 AF647-A'],
+            'CD8'  : ['CD8','CD8-A','BV711-A'],
+            'CD19' : ['CD19','CD19-A','BV605-A'],
+            # Viability/dead-like channels used for pre-gate
+            'DEAD' : ['DEAD','DEAD-A','ZOMBIE','ZOMBIE NIR*-A','HELIX','HELIX NP NIR*-A','VIABILITY','LIVE/DEAD'],
+        }
 
     # -------- I/O --------
 
@@ -122,22 +120,11 @@ class FCSProcessor:
         print(f"  📄 FCS file: {fcs_path}")
         self.last_fcs = fcs_path.stem
         meta = None
+        df = None
+        flowkit_err = None
 
-        # ---- Preferred: fcsparser ----
-        if HAVE_FCSPARSER:
-            try:
-                meta, data = fcsparser.parse(str(fcs_path))
-                df = pd.DataFrame(data)
-                print(f"  ↳ Using fcsparser; arcsinh(cofactor={self.cofactor}) applied to numeric channels")
-                num = df.select_dtypes(include=[np.number]).columns
-                df[num] = np.arcsinh(df[num] / self.cofactor)
-            except Exception as e:
-                print(f"  ⚠️ fcsparser failed ({e}); trying flowkit...")
-
-        # ---- Fallback: flowkit (no apply_transform) ----
-        if (not HAVE_FCSPARSER) or ('df' not in locals()):
-            if not HAVE_FLOWKIT:
-                raise RuntimeError("No FCS reader available for this file.")
+        # Try FlowKit first
+        if HAVE_FLOWKIT:
             try:
                 sample = fk.Sample(str(fcs_path))
                 if getattr(sample, 'compensation', None) is not None:
@@ -151,7 +138,23 @@ class FCSProcessor:
                 except Exception:
                     meta = None
             except Exception as e:
-                raise RuntimeError(f"FlowKit also failed to read {fcs_path.name}: {e}")
+                flowkit_err = e
+
+        # Fallback to fcsparser if needed
+        if df is None and HAVE_FCSPARSER:
+            try:
+                meta, data = fcsparser.parse(str(fcs_path))
+                df = pd.DataFrame(data)
+                print(f"  ↳ Using fcsparser; arcsinh(cofactor={self.cofactor}) applied to numeric channels"
+                      + (f" (FlowKit error: {flowkit_err})" if flowkit_err else ""))
+                num = df.select_dtypes(include=[np.number]).columns
+                df[num] = np.arcsinh(df[num] / self.cofactor)
+            except Exception as e:
+                raise RuntimeError(f"Both FlowKit and fcsparser failed on {fcs_path.name}. "
+                                   f"FlowKit error: {flowkit_err}; fcsparser error: {e}")
+
+        if df is None:
+            raise RuntimeError(f"No FCS backend succeeded for {fcs_path.name}.")
 
         raw_cols = df.columns.tolist()
         print("  Raw FCS columns (first 20):", raw_cols[:20])
@@ -166,23 +169,25 @@ class FCSProcessor:
         except Exception:
             pass
 
-        print("  Channel → marker preview (first 30):")
-        for r in channel_rows[:30]:
-            print(f"{r['index']:>6}  {str(r['data_col'])[:28]:<28}  $PnS:{str(r['$PnS'])[:40]:<40}  $PnN:{str(r['$PnN'])[:40]}")
+        if channel_rows:
+            print("  Channel → marker preview (first 30):")
+            for r in channel_rows[:30]:
+                print(f"{r['index']:>5}  {str(r['data_col'])[:28]:<28}  "
+                      f"$PnS:{str(r['$PnS'])[:38]:<38}  $PnN:{str(r['$PnN'])[:38]}")
 
-        try:
-            map_csv = self.log_dir / f"{fcs_path.stem}_channel_map.csv"
-            with open(map_csv, "w", newline="") as f:
-                w = _safe_csv_writer(f, ["index","data_col","$PnS","$PnN"])
-                w.writeheader()
-                for row in channel_rows:
-                    w.writerow(row)
-            print(f"  ↳ Full channel map saved to: {map_csv}")
-        except Exception as _e:
-            print(f"  (Could not write channel map CSV: {_e})")
+            try:
+                map_csv = self.log_dir / f"{fcs_path.stem}_channel_map.csv"
+                with open(map_csv, "w", newline="") as fh:
+                    w = _safe_csv_writer(fh, ["index", "data_col", "$PnS", "$PnN"])
+                    w.writeheader()
+                    for row in channel_rows:
+                        w.writerow(row)
+                print(f"  ↳ Full channel map saved to: {map_csv}")
+            except Exception as _e:
+                print(f"  (Could not write channel map CSV: {_e})")
 
         # Standardize columns
-        df = self._standardize_columns(df, meta=meta if isinstance(meta, dict) else None)
+        df = self._standardize_columns(df, meta=meta)
         print("  Standardized columns (first 20):", df.columns.tolist()[:20])
 
         # Log mapping
@@ -192,9 +197,10 @@ class FCSProcessor:
     def _standardize_columns(self, df: pd.DataFrame, meta: Optional[dict] = None) -> pd.DataFrame:
         new_columns = {}
         search_texts = {}
+        # Build a single uppercase search string from col, $PnS, $PnN
         for i, col in enumerate(df.columns, start=1):
             pieces = [str(col)]
-            if meta is not None:
+            if isinstance(meta, dict):
                 pnn = meta.get(f"$P{i}N")
                 pns = meta.get(f"$P{i}S")
                 if pnn: pieces.append(str(pnn))
@@ -210,18 +216,19 @@ class FCSProcessor:
                         new_columns[col] = marker
                         matched = True
                         break
-                if matched: break
-            if not matched and any(x in text for x in ['FSC','SSC','TIME','LIGHTLOSS','ZOMBIE']):
-                new_columns[col] = col
+                if matched:
+                    break
+            if not matched and any(x in text for x in ['FSC', 'SSC', 'TIME', 'LIGHTLOSS', 'ZOMBIE', 'VIABILITY']):
+                new_columns[col] = col  # keep scatter/time/imaging names
 
         # Persist rename map
         try:
             rename_map_csv = self.log_dir / f"{self.last_fcs}_rename_map.csv"
-            with open(rename_map_csv, "w", newline="") as f:
-                w = _safe_csv_writer(f, ["original","mapped"])
+            with open(rename_map_csv, "w", newline="") as fh:
+                w = _safe_csv_writer(fh, ["original", "mapped"])
                 w.writeheader()
                 for k, v in new_columns.items():
-                    w.writerow({"original":k, "mapped":v})
+                    w.writerow({"original": k, "mapped": v})
             print(f"  ↳ Canonical rename map saved to: {rename_map_csv}")
         except Exception as _e:
             print(f"  (Could not write rename map CSV: {_e})")
@@ -233,21 +240,36 @@ class FCSProcessor:
     def _log_marker_mapping(self, df: pd.DataFrame, fcs_path: Path):
         used = {m: (m in df.columns) for m in self.marker_mappings.keys()}
         log_file = self.log_dir / f"{fcs_path.stem}_marker_map.json"
-        with open(log_file, "w") as f:
+        with open(log_file, "w") as fh:
             json.dump({
                 'file': str(fcs_path),
                 'timestamp': datetime.now().isoformat(),
                 'markers_found': used,
                 'all_columns': list(df.columns),
                 'cofactor': self.cofactor
-            }, f, indent=2)
+            }, fh, indent=2)
         print(f"  ↳ Marker presence log saved to: {log_file}")
 
-    # -------- Gating --------
+    # -------- Viability pre-gate --------
+    def gate_viable(self, df: pd.DataFrame) -> np.ndarray:
+        """Return mask of viable cells (exclude high 'Dead/Viability/Helix/Zombie' signals)."""
+        cand = [c for c in df.columns
+                if any(t in c.upper() for t in ['DEAD', 'VIABILITY', 'LIVE/DEAD', 'ZOMBIE', 'HELIX', 'NIR'])]
+        if not cand:
+            return np.ones(len(df), dtype=bool)
+        v = pd.to_numeric(df[cand[0]], errors='coerce').values
+        if not np.isfinite(v).any():
+            return np.ones(len(df), dtype=bool)
+        thr = float(np.nanpercentile(v[~np.isnan(v)], 50))  # bottom 50% as viable
+        return np.nan_to_num(v, nan=np.inf) < thr
 
+    # -------- Gating --------
     def gate_blast_population(self, df: pd.DataFrame) -> Tuple[np.ndarray, Dict, str]:
         """Define blast gate with thresholds and degeneracy check; returns (mask, thresholds, mode)."""
-        n = len(df); thresholds = {}; gates_applied = []; mode = 'primary'
+        n = len(df)
+        thresholds = {}
+        gates_applied = []
+        mode = 'primary'
         gate = np.ones(n, dtype=bool)
 
         def pctl(col, q):
@@ -256,27 +278,26 @@ class FCSProcessor:
 
         primary_parts = 0
         if 'CD34' in df.columns:
-            thr = pctl('CD34', 75); thresholds['CD34_P75'] = thr
+            thr = pctl('CD34', 75)
+            thresholds['CD34_P75'] = thr
             gate &= (pd.to_numeric(df['CD34'], errors='coerce').fillna(-1e9).values > thr)
             gates_applied.append('CD34+'); primary_parts += 1
-            print(f"  CD34+ gate: {gate.sum()}/{n} cells")
         if 'CD117' in df.columns:
-            thr = pctl('CD117', 70); thresholds['CD117_P70'] = thr
+            thr = pctl('CD117', 70)
+            thresholds['CD117_P70'] = thr
             gate &= (pd.to_numeric(df['CD117'], errors='coerce').fillna(-1e9).values > thr)
             gates_applied.append('CD117+'); primary_parts += 1
-            print(f"  CD34+CD117+ gate: {gate.sum()}/{n} cells")
         if 'CD38' in df.columns:
             lo = pctl('CD38', 20); hi = pctl('CD38', 60)
             thresholds['CD38_P20'] = lo; thresholds['CD38_P60'] = hi
             v = pd.to_numeric(df['CD38'], errors='coerce').values
             gate &= (np.nan_to_num(v, nan=-1e9) > lo) & (np.nan_to_num(v, nan=1e9) < hi)
             gates_applied.append('CD38dim'); primary_parts += 1
-            print(f"  CD34+CD117+CD38dim gate: {gate.sum()}/{n} cells")
         if 'HLA-DR' in df.columns:
-            thr = pctl('HLA-DR', 60); thresholds['HLA-DR_P60'] = thr
+            thr = pctl('HLA-DR', 60)
+            thresholds['HLA-DR_P60'] = thr
             gate &= (pd.to_numeric(df['HLA-DR'], errors='coerce').fillna(-1e9).values > thr)
             gates_applied.append('HLA-DR+'); primary_parts += 1
-            print(f"  Full blast gate: {gate.sum()}/{n} cells")
 
         frac = float(np.mean(gate)) if n else 0.0
 
@@ -285,7 +306,9 @@ class FCSProcessor:
             mode = 'fallback_cd45_ssc'
             cd45 = pd.to_numeric(df['CD45'], errors='coerce').values if 'CD45' in df.columns else None
             ssc_candidates = [c for c in df.columns if 'SSC' in c and c.endswith('-A')]
-            ssc = pd.to_numeric(df[ssc_candidates[0]], errors='coerce').values if ssc_candidates else None
+            prefer = [c for c in ssc_candidates if c.upper() in ('SSC-A',) or 'IMAGING' in c.upper()]
+            ssc_col = prefer[0] if prefer else (ssc_candidates[0] if ssc_candidates else None)
+            ssc = pd.to_numeric(df[ssc_col], errors='coerce').values if ssc_col else None
 
             if cd45 is not None and np.isfinite(cd45).any():
                 cd45_low = float(np.nanpercentile(cd45[~np.isnan(cd45)], 30))
@@ -306,7 +329,7 @@ class FCSProcessor:
 
         print(f"✓ Blast population: {gate.sum()}/{n} cells ({100*frac:.1f}%)  [{mode}]")
         threshold_file = self.log_dir / f"{self.last_fcs}_blast_thresholds.json"
-        with open(threshold_file, "w") as f:
+        with open(threshold_file, "w") as fh:
             json.dump({
                 'file': self.last_fcs,
                 'timestamp': datetime.now().isoformat(),
@@ -316,12 +339,11 @@ class FCSProcessor:
                 'total_cells': int(n),
                 'gate_percentage': float(frac * 100),
                 'mode': mode
-            }, f, indent=2)
+            }, fh, indent=2)
         print(f"  ↳ Thresholds saved to: {threshold_file}")
         return gate, thresholds, mode
 
     # -------- FlowJo export --------
-
     def export_for_flowjo(self, fcs_df: pd.DataFrame, gates: Dict[str, np.ndarray], out_dir: Path, stem: str):
         """Export gated populations (FCS if fcswrite available, else CSV)."""
         out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
@@ -347,9 +369,9 @@ class FCSProcessor:
             print(f"  ↳ CSV fallback saved to: {csv_path}")
 
 
-# -------------------------------
+# ===============================
 # Morpho-Phenotypic Analyzer
-# -------------------------------
+# ===============================
 
 class MorphoPhenotypicAnalyzer:
     """Extract and combine morphological and phenotypic features (memory-safe)."""
@@ -360,22 +382,47 @@ class MorphoPhenotypicAnalyzer:
                  inference_image_size_cpu: int = 256):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.cache_dir = Path(cache_dir); self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.model = self._load_model(model_path)
+        self.model, self.feature_extractor = self._load_model(model_path)
         self.model.eval()
-        self.feature_extractor = self.model.encoder
         self.img_size_gpu = int(inference_image_size_gpu)
         self.img_size_cpu = int(inference_image_size_cpu)
 
-    def _load_model(self, model_path: Path) -> nn.Module:
-        from src.models import BD_S8_Model
-        model = BD_S8_Model(num_classes=5).to(self.device)
-        checkpoint = torch.load(model_path, map_location=self.device)
-        state_dict = checkpoint.get('state_dict', checkpoint)
-        clean = {}
-        for k, v in state_dict.items():
-            clean[k[6:]] = v if k.startswith('model.') else v
-        model.load_state_dict(clean, strict=False)
-        return model
+    def _load_model(self, model_path: Path) -> Tuple[nn.Module, nn.Module]:
+        """
+        Try to load user's BD_S8 model; if unavailable, fall back to a tiny CNN encoder
+        so the pipeline still runs (feature size ~32).
+        """
+        # Try custom model
+        try:
+            from src.models import BD_S8_Model
+            model = BD_S8_Model(num_classes=5)
+            checkpoint = torch.load(model_path, map_location='cpu')
+            state_dict = checkpoint.get('state_dict', checkpoint)
+            clean = {}
+            for k, v in state_dict.items():
+                clean[k[6:]] = v if k.startswith('model.') else v
+            model.load_state_dict(clean, strict=False)
+            model = model.to(self.device)
+            feature_extractor = getattr(model, 'encoder', None)
+            if feature_extractor is None:
+                raise RuntimeError("BD_S8_Model missing .encoder attribute.")
+            return model, feature_extractor
+        except Exception as e:
+            print(f"  ⚠️ Could not load BD_S8 model ({e}); using fallback tiny CNN encoder.")
+            encoder = nn.Sequential(
+                nn.Conv2d(3, 16, 3, stride=2, padding=1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(16, 32, 3, stride=2, padding=1),
+                nn.ReLU(inplace=True),
+                nn.AdaptiveAvgPool2d(1),
+                nn.Flatten()
+            ).to(self.device)
+            # Wrap in a simple container with .encoder for compatibility
+            class _Wrap(nn.Module):
+                def __init__(self, enc): super().__init__(); self.encoder = enc
+                def forward(self, x): return self.encoder(x)
+            model = _Wrap(encoder).to(self.device)
+            return model, encoder
 
     def _resize_side(self):
         return self.img_size_gpu if self.device.type == 'cuda' else self.img_size_cpu
@@ -384,7 +431,7 @@ class MorphoPhenotypicAnalyzer:
         img = tifffile.imread(str(path))
         if img.ndim == 2:
             img = np.stack([img]*3, axis=-1)
-        elif img.ndim == 3 and img.shape[0] <= 4:
+        elif img.ndim == 3 and img.shape[0] <= 4:  # CHW -> HWC
             img = np.transpose(img[:3], (1, 2, 0))
         if img.shape[-1] != 3:
             h, w = img.shape[:2]
@@ -422,30 +469,28 @@ class MorphoPhenotypicAnalyzer:
                             out = self.feature_extractor(bt)
                         out = out.float().detach().cpu().numpy()
                     except RuntimeError as e:
-                        # memory resilience
-                        if ('allocate memory' in str(e).lower()) or ('out of memory' in str(e).lower()):
+                        msg = str(e).lower()
+                        if ('allocate memory' in msg) or ('out of memory' in msg):
                             del bt
-                            if self.device.type == 'cuda': torch.cuda.empty_cache()
-                            gc.collect()
+                            if self.device.type == 'cuda':
+                                torch.cuda.empty_cache()
                             if micro_bs > 1:
                                 return _run(tensors, paths, max(1, micro_bs // 2))
                             else:
+                                # last resort: process each image separately
                                 for idx in range(start, end):
                                     b1 = torch.stack(tensors[idx:idx+1]).to(self.device, non_blocking=True)
                                     with ctx:
                                         arr = self.feature_extractor(b1).float().detach().cpu().numpy()
                                     np.save(paths[idx], arr[0]); feats_list.append(arr[0])
-                                    del b1
-                                    if self.device.type == 'cuda': torch.cuda.empty_cache()
-                                    gc.collect()
                                 return
                         else:
                             raise
                     for k in range(out.shape[0]):
                         np.save(paths[start + k], out[k]); feats_list.append(out[k])
                     del bt
-                    if self.device.type == 'cuda': torch.cuda.empty_cache()
-                    gc.collect()
+                    if self.device.type == 'cuda':
+                        torch.cuda.empty_cache()
                     start = end
 
             _run(images, save_paths, micro_bs=max(1, len(images)))
@@ -469,16 +514,17 @@ class MorphoPhenotypicAnalyzer:
             flush_batch(batch_imgs, batch_save_paths)
             batch_imgs.clear(); batch_save_paths.clear()
 
-        if not feats_list: return np.array([])
+        if not feats_list:
+            return np.array([])
         try:
             return np.vstack(feats_list)
         except Exception:
             return np.array(feats_list)
 
 
-# -------------------------------
+# ===============================
 # Phase 2 Pipeline
-# -------------------------------
+# ===============================
 
 class Phase2Pipeline:
     """Main pipeline with gating, advanced myeloid analysis, embeddings, clustering, and robust I/O."""
@@ -505,7 +551,6 @@ class Phase2Pipeline:
         )
 
     # -------- sample matching --------
-
     def match_samples(self) -> Dict[str, Dict]:
         matches = {}
         fcs_files = list(self.fcs_dir.rglob('*.fcs'))
@@ -543,7 +588,8 @@ class Phase2Pipeline:
                 else:
                     sample_type = "Healthy" if "BM" in pstr else "AML" if "AML" in pstr else "Unknown"
                     batch = Path(self.image_dir).name
-                matches[sample_id] = {"fcs_path": fcs_path, "image_paths": image_paths, "sample_type": sample_type, "batch": batch}
+                matches[sample_id] = {"fcs_path": fcs_path, "image_paths": image_paths,
+                                      "sample_type": sample_type, "batch": batch}
                 print(f"  ✓ {sample_id}: {len(image_paths)} images, {sample_type}, batch={batch}")
             else:
                 print(f"  ✗ {sample_id}: no images found")
@@ -551,7 +597,6 @@ class Phase2Pipeline:
         return matches
 
     # -------- embedding & clustering --------
-
     def _create_embedding_safe(self, features: np.ndarray, method: str = 'umap') -> np.ndarray:
         try:
             if method == 'umap':
@@ -599,10 +644,10 @@ class Phase2Pipeline:
         return results
 
     # -------- Myeloid differentiation scoring & helpers --------
-
     def _percentile_gate(self, series: pd.Series, p_low: float = 20, p_high: float = 80) -> Tuple[float, float]:
         s = pd.to_numeric(series, errors='coerce')
-        if not s.notna().any(): return (0.0, 0.0)
+        if not s.notna().any():
+            return (0.0, 0.0)
         return (float(np.nanpercentile(s, p_low)), float(np.nanpercentile(s, p_high)))
 
     def _token_to_mask(self, df: pd.DataFrame, token: str) -> np.ndarray:
@@ -611,35 +656,38 @@ class Phase2Pipeline:
         Missing markers → neutral (all True) so they don't erroneously zero-out a stage.
         """
         token = token.strip()
-        # handle variants like CD38-/dim
-        if '-/dim' in token:
+        if '-/dim' in token:  # handle variants like CD38-/dim
             base = token.split('-/dim')[0]
             return self._token_to_mask(df, base + '-') | self._token_to_mask(df, base + 'dim')
 
-        # detect suffixes
         if token.endswith('+'):
             base = token[:-1]
-            if base not in df.columns: return np.ones(len(df), dtype=bool)
-            lo, hi = self._percentile_gate(df[base], 75, 95)  # >= P75 considered positive
+            if base not in df.columns:
+                return np.ones(len(df), dtype=bool)
+            lo, _ = self._percentile_gate(df[base], 75, 95)  # >= P75 positive
             v = pd.to_numeric(df[base], errors='coerce').values
             return np.nan_to_num(v, nan=-1e9) >= lo
         elif token.endswith('-'):
             base = token[:-1]
-            if base not in df.columns: return np.ones(len(df), dtype=bool)
-            lo, hi = self._percentile_gate(df[base], 5, 25)  # <= P25 considered negative
+            if base not in df.columns:
+                return np.ones(len(df), dtype=bool)
+            _, hi = self._percentile_gate(df[base], 5, 25)  # <= P25 negative
             v = pd.to_numeric(df[base], errors='coerce').values
             return np.nan_to_num(v, nan=1e9) <= hi
-        elif token.lower().endswith('dim') or token.endswith('dim'):
-            base = token.replace('dim','').replace('-','').strip()
-            if base not in df.columns: return np.ones(len(df), dtype=bool)
-            lo = float(np.nanpercentile(pd.to_numeric(df[base], errors='coerce').dropna(), 20)) if df[base].notna().any() else -1e9
-            hi = float(np.nanpercentile(pd.to_numeric(df[base], errors='coerce').dropna(), 60)) if df[base].notna().any() else 1e9
-            v = pd.to_numeric(df[base], errors='coerce').values
+        elif token.lower().endswith('dim'):
+            base = token.replace('dim', '').replace('-', '').strip()
+            if base not in df.columns:
+                return np.ones(len(df), dtype=bool)
+            s = pd.to_numeric(df[base], errors='coerce')
+            if not s.notna().any():
+                return np.ones(len(df), dtype=bool)
+            lo = float(np.nanpercentile(s.dropna(), 20))
+            hi = float(np.nanpercentile(s.dropna(), 60))
+            v = s.values
             vv = np.nan_to_num(v, nan=0.0)
             return (vv > lo) & (vv < hi)
         else:
-            # bare marker implies plus
-            return self._token_to_mask(df, token + '+')
+            return self._token_to_mask(df, token + '+')  # bare marker -> '+'
 
     def _apply_stage_gates(self, df: pd.DataFrame, tokens: List[str]) -> np.ndarray:
         mask = np.ones(len(df), dtype=bool)
@@ -650,41 +698,52 @@ class Phase2Pipeline:
     def score_myeloid_differentiation(self, df: pd.DataFrame) -> Tuple[Dict, Dict]:
         """
         Score myeloid differentiation stages; returns (stage_scores, stage_masks).
-        Stage tokens are evaluated as AND across markers with percentile-based thresholds.
+        Require >=2 markers for a stage to consider it 'sufficient' to avoid over-calling on sparse panels.
         """
         stages = {
-            'stem_progenitor': ['CD34+','CD38dim','CD117+'],
-            'promyelocyte'  : ['CD34-','CD117+','CD13+','CD33+','MPO+'],
-            'myelocyte'     : ['CD34-','CD13+','CD33+','CD15+'],
-            'metamyelocyte' : ['CD13+','CD15+','CD16+'],
-            'neutrophil'    : ['CD13+','CD16+','CD15+','CD11b+'],
+            'stem_progenitor': ['CD34+', 'CD38dim', 'CD117+'],
+            'promyelocyte'  : ['CD34-', 'CD117+', 'CD13+', 'CD33+', 'MPO+'],
+            'myelocyte'     : ['CD34-', 'CD13+', 'CD33+', 'CD15+'],
+            'metamyelocyte' : ['CD13+', 'CD15+', 'CD16+'],
+            'neutrophil'    : ['CD13+', 'CD16+', 'CD15+', 'CD11b+'],
         }
         stage_scores, stage_masks = {}, {}
+        present = set(df.columns)
         for stage, tokens in stages.items():
-            m = self._apply_stage_gates(df, tokens)
+            bases = {t.replace('+', '').replace('-', '').replace('dim', '').replace('-/', '') for t in tokens}
+            n_present = sum(b in present for b in bases)
+            if n_present < 2:
+                m = np.zeros(len(df), dtype=bool); pct, cnt = 0.0, 0; suff = False
+            else:
+                m = self._apply_stage_gates(df, tokens)
+                pct, cnt, suff = float(m.mean()*100.0), int(m.sum()), True
             stage_masks[stage] = m
-            stage_scores[stage] = {'percentage': float(m.mean()*100.0), 'count': int(m.sum())}
-
-        # simple maturation block heuristic
-        if stage_scores['promyelocyte']['percentage'] > 30:
+            stage_scores[stage] = {'percentage': pct, 'count': cnt,
+                                   'sufficient_markers': suff, 'markers_present': int(n_present)}
+        # maturation block heuristic only if early stages had sufficient markers
+        if stage_scores['promyelocyte']['sufficient_markers'] and stage_scores['promyelocyte']['percentage'] > 30:
             stage_scores['maturation_block'] = 'promyelocyte'
-        elif stage_scores['stem_progenitor']['percentage'] > 20:
+        elif stage_scores['stem_progenitor']['sufficient_markers'] and stage_scores['stem_progenitor']['percentage'] > 20:
             stage_scores['maturation_block'] = 'stem_progenitor'
         else:
             stage_scores['maturation_block'] = None
         return stage_scores, stage_masks
 
     # -------- Aberrant phenotypes --------
-
     def detect_aberrant_phenotypes(self, df: pd.DataFrame) -> Tuple[Dict, Dict]:
         """
         Detect selected AML-associated aberrant phenotypes; returns (info, masks).
         """
         ab, masks = {}, {}
+
         def pos_mask(col, q=70):
-            if col not in df.columns: return np.zeros(len(df), dtype=bool)
-            thr = float(np.nanpercentile(pd.to_numeric(df[col], errors='coerce').dropna(), q)) if df[col].notna().any() else 1e9
-            v = pd.to_numeric(df[col], errors='coerce').values
+            if col not in df.columns:
+                return np.zeros(len(df), dtype=bool)
+            s = pd.to_numeric(df[col], errors='coerce')
+            if not s.notna().any():
+                return np.zeros(len(df), dtype=bool)
+            thr = float(np.nanpercentile(s.dropna(), q))
+            v = s.values
             return np.nan_to_num(v, nan=-1e9) > thr
 
         # CD34+CD56+ (poor prognosis)
@@ -711,7 +770,6 @@ class Phase2Pipeline:
         return ab, masks
 
     # -------- Advanced morpho-phenotype integration --------
-
     def integrate_morpho_phenotype_advanced(self,
                                             morphological_features: np.ndarray,
                                             phenotypic_df: pd.DataFrame,
@@ -729,9 +787,7 @@ class Phase2Pipeline:
             if not isinstance(gate_mask, np.ndarray) or gate_mask.sum() < 10:
                 continue
             frac = float(gate_mask.mean())
-            # morphology: weight the global morphology by fraction
             weighted_morph = morph_mean * frac
-            # phenotype: median across gated events (if phenotypic_df available)
             if phenotypic_df is not None and len(phenotypic_df) == len(gate_mask) and phenotypic_df.shape[1] > 0:
                 phenotype_summary = phenotypic_df.loc[gate_mask].median(numeric_only=True).astype('float32').values
             else:
@@ -744,7 +800,6 @@ class Phase2Pipeline:
         return results
 
     # -------- Save / visualize / QC --------
-
     def _append_summary_row(self, row: dict):
         csv_path = self.output_dir / "sample_summaries.csv"
         tmp_path = csv_path.with_suffix(".tmp")
@@ -778,9 +833,9 @@ class Phase2Pipeline:
             "aberrant_phenotypes": results.get('aberrant_phenotypes', {}),
         }
         json_path = self.output_dir / f"{sample_id}_summary.json"
-        with open(json_path, "w") as f: json.dump(summary_dict, f, indent=2)
+        with open(json_path, "w") as fh: json.dump(summary_dict, fh, indent=2)
         yaml_path = self.output_dir / f"{sample_id}_summary.yaml"
-        with open(yaml_path, "w") as f: yaml.safe_dump(summary_dict, f, sort_keys=False)
+        with open(yaml_path, "w") as fh: yaml.safe_dump(summary_dict, fh, sort_keys=False)
         print(f"  ↳ Summary JSON: {json_path}")
         print(f"  ↳ Summary YAML: {yaml_path}")
 
@@ -801,6 +856,10 @@ class Phase2Pipeline:
         np.save(self.output_dir / f"{sample_id}_results.npy", results, allow_pickle=True)
 
     def visualize_results(self, results: Dict):
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
         sample_id = results['sample_id']; sample_type = results['sample_type']
         fig = plt.figure(figsize=(16, 10))
         emb = results['embeddings']['umap']
@@ -847,7 +906,7 @@ class Phase2Pipeline:
             for bar, frac in zip(bars, fracs):
                 bar.set_color('red' if frac > 0.5 else 'orange' if frac > 0.2 else 'green')
             ax6.set_yticks(y_pos); ax6.set_yticklabels(gates)
-            ax6.set_xlabel('Fraction'); ax6.set_title('Gate Fractions (Sample-level)'); ax6.set_xlim([0,1])
+            ax6.set_xlabel('Fraction'); ax6.set_title('Gate Fractions (Sample-level)'); ax6.set_xlim([0, 1])
 
         plt.suptitle(f'Sample {sample_id} - Morpho-Phenotypic Analysis', fontsize=14)
         plt.tight_layout()
@@ -857,11 +916,9 @@ class Phase2Pipeline:
         return save_path
 
     # -------- AML vs Healthy comparison --------
-
     def compare_aml_healthy_populations(self, aml_results: List[Dict], healthy_results: List[Dict]) -> Dict:
         from scipy.stats import mannwhitneyu
         comparison = {}
-
         aml_blasts = [r.get('gate_fractions', {}).get('blast', 0.0) for r in aml_results]
         healthy_blasts = [r.get('gate_fractions', {}).get('blast', 0.0) for r in healthy_results]
         if aml_blasts and healthy_blasts:
@@ -878,14 +935,14 @@ class Phase2Pipeline:
         return comparison
 
     # -------- Batch/QC helpers --------
-
     def detect_batch_effects(self, samples_results: List[Dict]) -> Dict:
         out = {"gate_blast_by_batch": {}, "outlier_samples": []}
         per_batch = {}
         for r in samples_results:
             b = r.get('batch', 'unknown')
             frac = r.get('gate_fractions', {}).get('blast')
-            if frac is None: continue
+            if frac is None:
+                continue
             per_batch.setdefault(b, []).append(frac)
         for b, vals in per_batch.items():
             vals = np.array(vals, dtype=float)
@@ -894,8 +951,9 @@ class Phase2Pipeline:
         if all_vals:
             mu = float(np.mean(all_vals)); sd = float(np.std(all_vals)) + 1e-8
             for r in samples_results:
-                frac = r.get('gate_fractions', {}).get('blast'); 
-                if frac is None: continue
+                frac = r.get('gate_fractions', {}).get('blast')
+                if frac is None:
+                    continue
                 if abs(frac - mu) > 3 * sd:
                     out["outlier_samples"].append({"sample_id": r.get('sample_id'), "blast": float(frac)})
         return out
@@ -907,13 +965,14 @@ class Phase2Pipeline:
             gates.update(r.get('gate_fractions', {}).keys())
         for g in gates:
             vals = [r['gate_fractions'][g] for r in samples_results if g in r.get('gate_fractions', {})]
-            if not vals: continue
+            if not vals:
+                continue
             arr = np.array(vals, dtype=float)
-            qc[g] = {"mean": float(arr.mean()), "std": float(arr.std()), "cv": float(arr.std()/(arr.mean()+1e-8)), "n": int(len(arr))}
+            qc[g] = {"mean": float(arr.mean()), "std": float(arr.std()),
+                     "cv": float(arr.std()/(arr.mean()+1e-8)), "n": int(len(arr))}
         return qc
 
     # -------- main per-sample --------
-
     def process_sample(self, sample_id: str, sample_data: Dict) -> Dict:
         print(f"\n{'='*60}\nProcessing sample: {sample_id}\n{'='*60}")
 
@@ -924,14 +983,22 @@ class Phase2Pipeline:
         fcs_df = self.fcs_processor.load_fcs(sample_data['fcs_path'])
         print(f"  Loaded {len(fcs_df)} events with {len(fcs_df.columns)} channels")
 
+        # 1b. Viability pre-gate (optional but recommended)
+        viable_mask = self.fcs_processor.gate_viable(fcs_df)
+        if viable_mask.mean() < 0.99:
+            print(f"  Viability pre-gate: kept {viable_mask.sum()}/{len(viable_mask)} events ({100*viable_mask.mean():.1f}%)")
+        fcs_df = fcs_df.loc[viable_mask].reset_index(drop=True)
+
         # 2. Blast gate
         print("\n🔬 Applying gates (blast + myeloid hierarchy)...")
         blast_gate, blast_thresholds, blast_mode = self.fcs_processor.gate_blast_population(fcs_df)
         results['gates'] = {'blast': blast_gate}
         results['thresholds'] = {'blast': blast_thresholds, 'blast_mode': blast_mode}
 
-        # 3. Phenotypic summary table (only mapped markers)
-        marker_cols = [c for c in fcs_df.columns if c in self.fcs_processor.marker_mappings]
+        # 3. Phenotypic summary table (only mapped markers, not scatter/viability)
+        skip_cols = set(['DEAD'])
+        mapped = [m for m in self.fcs_processor.marker_mappings.keys() if m in fcs_df.columns and m not in skip_cols]
+        marker_cols = [c for c in fcs_df.columns if c in mapped]
         if marker_cols:
             phenotypic_df = fcs_df[marker_cols].copy()
             spec_summary_vec = phenotypic_df.median(numeric_only=True).astype('float32').values
@@ -944,7 +1011,6 @@ class Phase2Pipeline:
         # 4. Myeloid stage scores + masks
         stage_scores, stage_masks = self.score_myeloid_differentiation(fcs_df)
         results['stage_scores'] = stage_scores
-        # merge stage masks into gates for FlowJo export
         for name, m in stage_masks.items():
             results['gates'][f'stage_{name}'] = m
 
@@ -957,7 +1023,8 @@ class Phase2Pipeline:
         # 6. Images → morphology
         image_paths = sample_data['image_paths']
         if len(image_paths) > self.max_cells_per_sample:
-            random.seed(SEED); image_paths = random.sample(image_paths, self.max_cells_per_sample)
+            random.seed(SEED)
+            image_paths = random.sample(image_paths, self.max_cells_per_sample)
         print(f"\n🖼️ Extracting features from {len(image_paths)} images...")
         if image_paths:
             print(f"  First image parent dir: {Path(image_paths[0]).parent}")
@@ -978,12 +1045,13 @@ class Phase2Pipeline:
         # 7. Gate fractions (always include blast; drop degenerate others)
         gate_fractions = {}
         for gname, gmask in results['gates'].items():
-            if not isinstance(gmask, np.ndarray): continue
+            if not isinstance(gmask, np.ndarray):
+                continue
             frac = float(np.mean(gmask)) if len(gmask) else 0.0
             if gname == 'blast' or (0.005 <= frac <= 0.995):
                 gate_fractions[gname] = frac
         results['gate_fractions'] = gate_fractions
-        pretty = {k: round(float(v), 3) for k, v in gate_fractions.items()}
+        pretty = {k: round(float(v), 5) for k, v in gate_fractions.items()}
         print(f"\n📊 Gate fractions (sample-level): {pretty}")
 
         # 8. Combine features
@@ -1036,7 +1104,6 @@ class Phase2Pipeline:
         return results
 
     # -------- run many --------
-
     def run_analysis(self, max_samples: int = 5):
         print("\n" + "="*60)
         print("🚀 PHASE 2: Morpho-Phenotypic Analysis")
@@ -1053,7 +1120,8 @@ class Phase2Pipeline:
 
         all_results = []
         for i, (sample_id, sample_data) in enumerate(matched.items()):
-            if i >= max_samples: break
+            if i >= max_samples:
+                break
             try:
                 sample_data['batch'] = sample_data.get('batch', Path(self.image_dir).name)
                 r = self.process_sample(sample_id, sample_data)
@@ -1070,7 +1138,7 @@ class Phase2Pipeline:
         if csv_path.exists():
             try:
                 df = pd.read_csv(csv_path, engine="python", on_bad_lines="skip")
-                cols = [c for c in ['sample_id','sample_type','n_images_used','gate_blast'] if c in df.columns]
+                cols = [c for c in ['sample_id', 'sample_type', 'n_images_used', 'gate_blast'] if c in df.columns]
                 if cols:
                     print("\n📊 Summary of processed samples:")
                     print(df[cols].to_string(index=False))
@@ -1081,10 +1149,9 @@ class Phase2Pipeline:
         return all_results
 
 
-# -------------------------------
+# ===============================
 # Main
-# -------------------------------
-
+# ===============================
 if __name__ == "__main__":
     # Config tuned for myeloid/blast analysis
     config = {
@@ -1095,7 +1162,7 @@ if __name__ == "__main__":
         'max_tsne_samples': 20000,
         'dbscan_eps': 1.5,
         'inference_image_size_gpu': 512,
-        'inference_image_size_cpu': 256,  # drop to 224 if RAM is tight
+        'inference_image_size_cpu': 256,
     }
 
     pipeline = Phase2Pipeline(
@@ -1113,17 +1180,17 @@ if __name__ == "__main__":
     healthy = [r for r in results if r.get('sample_type') == 'Healthy']
     if aml and healthy:
         comp = pipeline.compare_aml_healthy_populations(aml, healthy)
-        with open(pipeline.output_dir / "aml_vs_healthy_comparison.json", "w") as f:
-            json.dump(comp, f, indent=2)
+        with open(pipeline.output_dir / "aml_vs_healthy_comparison.json", "w") as fh:
+            json.dump(comp, fh, indent=2)
         print("🧪 AML vs Healthy comparison saved.")
 
     batch_effects = pipeline.detect_batch_effects(results)
-    with open(pipeline.output_dir / "batch_effects.json", "w") as f:
-        json.dump(batch_effects, f, indent=2)
+    with open(pipeline.output_dir / "batch_effects.json", "w") as fh:
+        json.dump(batch_effects, fh, indent=2)
 
     qc_metrics = pipeline.cross_sample_qc(results)
-    with open(pipeline.output_dir / "cross_sample_qc.json", "w") as f:
-        json.dump(qc_metrics, f, indent=2)
+    with open(pipeline.output_dir / "cross_sample_qc.json", "w") as fh:
+        json.dump(qc_metrics, fh, indent=2)
 
     print("\n✅ Phase 2 complete! Check outputs for:")
     print("  - sample_summaries.csv (aggregate metrics; schema-safe)")
