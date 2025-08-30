@@ -5,8 +5,10 @@ Adds deeper myeloid/blast analysis, robust memory handling, and schema-safe I/O.
 """
 
 import os
-import cv2
 import io
+import gc
+import cv2
+import csv
 import json
 import yaml
 import time
@@ -53,16 +55,32 @@ if torch.cuda.is_available():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-# FCS processing
+# ============ FCS processing (robust imports) ============
+try:
+    import fcsparser
+    HAVE_FCSPARSER = True
+except Exception:
+    fcsparser = None
+    HAVE_FCSPARSER = False
+
 try:
     import flowkit as fk
     HAVE_FLOWKIT = True
 except Exception:
+    fk = None
     HAVE_FLOWKIT = False
-    try:
-        import fcsparser
-    except Exception:
-        raise RuntimeError("Neither flowkit nor fcsparser is available. Please install one.")
+
+if not (HAVE_FCSPARSER or HAVE_FLOWKIT):
+    raise RuntimeError("Neither flowkit nor fcsparser is available. Please install one.")
+
+
+# -------------------------------
+# Utils
+# -------------------------------
+
+def _safe_csv_writer(f, fieldnames):
+    # CSV writer with Excel-friendly dialect; avoids delimiter/quote issues
+    return csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
 
 
 # -------------------------------
@@ -105,25 +123,35 @@ class FCSProcessor:
         self.last_fcs = fcs_path.stem
         meta = None
 
-        if HAVE_FLOWKIT:
+        # ---- Preferred: fcsparser ----
+        if HAVE_FCSPARSER:
             try:
-                sample = fk.Sample(str(fcs_path))
-                if sample.compensation is not None:
-                    sample.apply_compensation(sample.compensation)
-                sample.apply_transform('arcsinh', channels=None, cofactor=self.cofactor)
-                df = sample.as_dataframe()
-            except Exception as e:
-                print(f"  Fallback to fcsparser (flowkit error: {e}); arcsinh(cofactor={self.cofactor}) on numeric.")
                 meta, data = fcsparser.parse(str(fcs_path))
                 df = pd.DataFrame(data)
+                print(f"  ↳ Using fcsparser; arcsinh(cofactor={self.cofactor}) applied to numeric channels")
                 num = df.select_dtypes(include=[np.number]).columns
                 df[num] = np.arcsinh(df[num] / self.cofactor)
-        else:
-            print(f"  ↳ Using fcsparser; arcsinh(cofactor={self.cofactor}) applied to numeric channels")
-            meta, data = fcsparser.parse(str(fcs_path))
-            df = pd.DataFrame(data)
-            num = df.select_dtypes(include=[np.number]).columns
-            df[num] = np.arcsinh(df[num] / self.cofactor)
+            except Exception as e:
+                print(f"  ⚠️ fcsparser failed ({e}); trying flowkit...")
+
+        # ---- Fallback: flowkit (no apply_transform) ----
+        if (not HAVE_FCSPARSER) or ('df' not in locals()):
+            if not HAVE_FLOWKIT:
+                raise RuntimeError("No FCS reader available for this file.")
+            try:
+                sample = fk.Sample(str(fcs_path))
+                if getattr(sample, 'compensation', None) is not None:
+                    sample.apply_compensation(sample.compensation)
+                df = sample.as_dataframe()
+                print(f"  ↳ Using flowkit; arcsinh(cofactor={self.cofactor}) applied to numeric channels")
+                num = df.select_dtypes(include=[np.number]).columns
+                df[num] = np.arcsinh(df[num] / self.cofactor)
+                try:
+                    meta = getattr(sample, 'metadata', None)
+                except Exception:
+                    meta = None
+            except Exception as e:
+                raise RuntimeError(f"FlowKit also failed to read {fcs_path.name}: {e}")
 
         raw_cols = df.columns.tolist()
         print("  Raw FCS columns (first 20):", raw_cols[:20])
@@ -132,8 +160,8 @@ class FCSProcessor:
         channel_rows = []
         try:
             for i, col in enumerate(raw_cols, start=1):
-                pnn = meta.get(f"$P{i}N") if meta is not None else None
-                pns = meta.get(f"$P{i}S") if meta is not None else None
+                pnn = meta.get(f"$P{i}N") if isinstance(meta, dict) else None
+                pns = meta.get(f"$P{i}S") if isinstance(meta, dict) else None
                 channel_rows.append({"index": i, "data_col": col, "$PnS": pns, "$PnN": pnn})
         except Exception:
             pass
@@ -145,15 +173,16 @@ class FCSProcessor:
         try:
             map_csv = self.log_dir / f"{fcs_path.stem}_channel_map.csv"
             with open(map_csv, "w", newline="") as f:
-                w = csv_writer = _safe_csv_writer(f, ["index","data_col","$PnS","$PnN"])
+                w = _safe_csv_writer(f, ["index","data_col","$PnS","$PnN"])
                 w.writeheader()
-                for row in channel_rows: w.writerow(row)
+                for row in channel_rows:
+                    w.writerow(row)
             print(f"  ↳ Full channel map saved to: {map_csv}")
         except Exception as _e:
             print(f"  (Could not write channel map CSV: {_e})")
 
         # Standardize columns
-        df = self._standardize_columns(df, meta=meta)
+        df = self._standardize_columns(df, meta=meta if isinstance(meta, dict) else None)
         print("  Standardized columns (first 20):", df.columns.tolist()[:20])
 
         # Log mapping
@@ -393,9 +422,11 @@ class MorphoPhenotypicAnalyzer:
                             out = self.feature_extractor(bt)
                         out = out.float().detach().cpu().numpy()
                     except RuntimeError as e:
+                        # memory resilience
                         if ('allocate memory' in str(e).lower()) or ('out of memory' in str(e).lower()):
                             del bt
                             if self.device.type == 'cuda': torch.cuda.empty_cache()
+                            gc.collect()
                             if micro_bs > 1:
                                 return _run(tensors, paths, max(1, micro_bs // 2))
                             else:
@@ -404,6 +435,9 @@ class MorphoPhenotypicAnalyzer:
                                     with ctx:
                                         arr = self.feature_extractor(b1).float().detach().cpu().numpy()
                                     np.save(paths[idx], arr[0]); feats_list.append(arr[0])
+                                    del b1
+                                    if self.device.type == 'cuda': torch.cuda.empty_cache()
+                                    gc.collect()
                                 return
                         else:
                             raise
@@ -411,6 +445,7 @@ class MorphoPhenotypicAnalyzer:
                         np.save(paths[start + k], out[k]); feats_list.append(out[k])
                     del bt
                     if self.device.type == 'cuda': torch.cuda.empty_cache()
+                    gc.collect()
                     start = end
 
             _run(images, save_paths, micro_bs=max(1, len(images)))
@@ -625,7 +660,6 @@ class Phase2Pipeline:
             'neutrophil'    : ['CD13+','CD16+','CD15+','CD11b+'],
         }
         stage_scores, stage_masks = {}, {}
-        n = len(df) if len(df) else 1
         for stage, tokens in stages.items():
             m = self._apply_stage_gates(df, tokens)
             stage_masks[stage] = m
@@ -832,7 +866,7 @@ class Phase2Pipeline:
         healthy_blasts = [r.get('gate_fractions', {}).get('blast', 0.0) for r in healthy_results]
         if aml_blasts and healthy_blasts:
             try:
-                stat, p_value = mannwhitneyu(aml_blasts, healthy_blasts, alternative='greater')
+                _, p_value = mannwhitneyu(aml_blasts, healthy_blasts, alternative='greater')
             except Exception:
                 p_value = 1.0
             comparison['blast_burden'] = {
@@ -841,7 +875,6 @@ class Phase2Pipeline:
                 'p_value': float(p_value),
                 'significant': bool(p_value < 0.05)
             }
-        # You can add cluster distribution comparisons here if desired.
         return comparison
 
     # -------- Batch/QC helpers --------
@@ -942,7 +975,7 @@ class Phase2Pipeline:
             })
             return results
 
-        # 7. Gate fractions (always include blast)
+        # 7. Gate fractions (always include blast; drop degenerate others)
         gate_fractions = {}
         for gname, gmask in results['gates'].items():
             if not isinstance(gmask, np.ndarray): continue
@@ -950,7 +983,8 @@ class Phase2Pipeline:
             if gname == 'blast' or (0.005 <= frac <= 0.995):
                 gate_fractions[gname] = frac
         results['gate_fractions'] = gate_fractions
-        print(f"\n📊 Gate fractions (sample-level): {{k: round(v,3) for k,v in gate_fractions.items()}}")
+        pretty = {k: round(float(v), 3) for k, v in gate_fractions.items()}
+        print(f"\n📊 Gate fractions (sample-level): {pretty}")
 
         # 8. Combine features
         print("\n🎯 Combining morphological and phenotypic features...")
@@ -1048,17 +1082,6 @@ class Phase2Pipeline:
 
 
 # -------------------------------
-# Utils
-# -------------------------------
-
-def _safe_csv_writer(f, fieldnames):
-    # CSV writer with Excel-friendly dialect; avoids delimiter/quote issues
-    return csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
-
-import csv  # keep standard csv import available
-
-
-# -------------------------------
 # Main
 # -------------------------------
 
@@ -1072,7 +1095,7 @@ if __name__ == "__main__":
         'max_tsne_samples': 20000,
         'dbscan_eps': 1.5,
         'inference_image_size_gpu': 512,
-        'inference_image_size_cpu': 256,
+        'inference_image_size_cpu': 256,  # drop to 224 if RAM is tight
     }
 
     pipeline = Phase2Pipeline(
