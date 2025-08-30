@@ -471,7 +471,7 @@ class Phase2Pipeline:
 
     def _compute_phenotype_vector(self, fcs_df: pd.DataFrame) -> np.ndarray:
         vals = []
-        for m in self.marker_order:
+        for m in self.fcs_processor.marker_order: 
             if m in fcs_df.columns:
                 v = pd.to_numeric(fcs_df[m], errors='coerce')
                 vals.append(float(np.nanmedian(v)))
