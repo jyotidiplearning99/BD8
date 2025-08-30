@@ -1,4 +1,4 @@
-# src/phase2_morpho_phenotypic_production.py
+# src/phase2_fcs_gating.py
 """
 Phase 2: Production-ready morpho-phenotypic analysis for AML vs Healthy
 Building on Phase 1's 79% accurate model for myeloid/blast compartment analysis
@@ -439,7 +439,12 @@ class Phase2Pipeline:
         phen_norm = scaler_phen.fit_transform(phenotypic_features)
         
         alpha = 0.6
-        combined_features = alpha * morph_norm + (1 - alpha) * phen_norm
+        combined_features = np.hstack([
+            alpha * morph_norm ,
+            (1 - alpha) * phen_norm])
+        
+        print(f"  Combined shape: {combined_features.shape} "
+            f"(morph {morph_norm.shape[1]} + phen {phen_norm.shape[1]})")
         
         results['features'] = {
             'morphological': morphological_features,
@@ -627,6 +632,7 @@ class Phase2Pipeline:
     def _append_summary_row(self, row: dict):
         """Append row to CSV summary"""
         csv_path = self.output_dir / "sample_summaries.csv"
+        
         write_header = not csv_path.exists()
         
         with open(csv_path, "a", newline="") as f:
@@ -736,39 +742,67 @@ class Phase2Pipeline:
         return save_path
     
     def match_samples(self) -> Dict[str, Dict]:
-        """Match FCS files to image directories"""
-        
+        """Match each FCS to images by filename prefix (robust to '_images_...' dirs)."""
         matches = {}
         fcs_files = list(self.fcs_dir.rglob('*.fcs'))
-        
+
         print(f"\n📁 Found {len(fcs_files)} FCS files")
-        
+        print(f"Searching images under: {self.image_dir}")
+
         for fcs_path in fcs_files:
-            sample_id = fcs_path.stem.split('_')[0]
-            
-            possible_dirs = [
-                self.image_dir / 'AML' / sample_id,
-                self.image_dir / 'Healthy BM' / sample_id,
-                self.image_dir / sample_id
-            ]
-            
-            image_paths = []
-            for dir_path in possible_dirs:
-                if dir_path.exists():
-                    images = list(dir_path.rglob('*.tif')) + \
-                            list(dir_path.rglob('*.tiff'))
-                    image_paths.extend(images)
-            
+            sample_id = fcs_path.stem  # <-- keep FULL stem
+            image_paths: List[Path] = []
+
+            # 1) Common case: a directory like '<stem>_images_<timestamp>/'
+            for d in self.image_dir.rglob(f"{sample_id}_images_*"):
+                if d.is_dir():
+                    image_paths += list(d.rglob("*.tif"))
+                    image_paths += list(d.rglob("*.tiff"))
+
+            # 2) Fallback: files whose name starts with the stem anywhere under image_dir
+            if not image_paths:
+                image_paths += list(self.image_dir.rglob(f"{sample_id}_*.tif"))
+                image_paths += list(self.image_dir.rglob(f"{sample_id}_*.tiff"))
+
+            # 3) Extra fallback: case/spacing-insensitive match on filename stems
+            if not image_paths:
+                def norm(s: str) -> str:
+                    return "".join(ch.lower() for ch in s if ch.isalnum())
+                nstem = norm(sample_id)
+                for tif in self.image_dir.rglob("*.tif"):
+                    if norm(tif.stem).startswith(nstem):
+                        image_paths.append(tif)
+                for tif in self.image_dir.rglob("*.tiff"):
+                    if norm(tif.stem).startswith(nstem):
+                        image_paths.append(tif)
+
             if image_paths:
-                sample_type = 'AML' if 'AML' in str(fcs_path) else 'Healthy'
+                # Decide type from folder the FCS lives in
+                image_paths = sorted(set(image_paths))
+                
+                pstr = str(fcs_path)
+                if "/AML/" in pstr:
+                    sample_type = "AML"
+                elif "/Healthy BM/" in pstr:
+                    sample_type = "Healthy"
+                else:
+                    # leave as Healthy vs AML by heuristic or Unknown
+                    sample_type = (
+                    "Healthy" if "BM" in pstr else "AML" if "AML" in pstr else "Unknown"
+                )
+
                 matches[sample_id] = {
-                    'fcs_path': fcs_path,
-                    'image_paths': image_paths,
-                    'sample_type': sample_type
+                    "fcs_path": fcs_path,
+                    "image_paths": image_paths,
+                    "sample_type": sample_type,
                 }
                 print(f"  ✓ {sample_id}: {len(image_paths)} images, {sample_type}")
-        
+            else:
+                print(f"  ✗ {sample_id}: no images found")
+
         return matches
+
+    
     
     def run_analysis(self, max_samples: int = 5):
         """Run complete Phase 2 analysis"""
@@ -829,7 +863,7 @@ if __name__ == "__main__":
     
     pipeline = Phase2Pipeline(
         image_dir=Path('/scratch/project_2010376/BDS8/BDS8_data'),
-        fcs_dir=Path('/scratch/project_2010376/BDS8/FCS_data'),
+        fcs_dir=Path('/scratch/project_2010376/BDS8/BDS8_data'),
         model_path='models/last.ckpt',  # Your 79% accurate Phase 1 model
         output_dir=Path('outputs/phase2'),
         config=config

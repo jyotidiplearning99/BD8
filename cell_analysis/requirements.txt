@@ -16,3 +16,13 @@ umap-learn==0.5.6
 matplotlib==3.8.4
 scipy==1.11.4
 fcsparser==0.2.4
+
+segmentation-models-pytorch==0.3.3
+pretrainedmodels==0.7.4
+efficientnet-pytorch==0.7.1
+torchvision==0.20.1+cu121   # install from PyTorch cu121 index when recreating
+pandas
+umap-learn
+matplotlib
+scipy
+fcsparser
