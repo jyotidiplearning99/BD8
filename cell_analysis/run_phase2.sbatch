@@ -1,45 +1,68 @@
 #!/bin/bash
-#SBATCH -J phase2_aml
-#SBATCH --partition=gputest            # try: gputest (15 min) → later: gpusmall/gpumedium
-#SBATCH --time=00:15:00                # increase for gpusmall/gpumedium
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
-# Either of the following GPU requests usually works. Keep ONE and comment the other.
-#SBATCH --gres=gpu:a100:1             # Mahti shows GRES=gpu:a100 in sinfo (safe choice)
-# #SBATCH --gpus=1                     # Modern Slurm alternative (commented by default)
+#SBATCH --account=project_2010376
+#SBATCH --partition=gpusmall
+#SBATCH --time=08:00:00
+#SBATCH --job-name=cell-train
+#SBATCH --chdir=/scratch/project_2010376/JDs_Project/cell_analysis
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --signal=TERM@300
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=18
+#SBATCH --gres=gpu:a100:1
 
-#SBATCH -o logs/%x_%j.out
-#SBATCH -e logs/%x_%j.err
-
-set -euo pipefail
+set -Eeuo pipefail
 
 module purge || true
+module load pytorch           # brings a CUDA-enabled torch + Python
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export MPLBACKEND=Agg
+export PYTHONUNBUFFERED=1
 
-# --- Activate Python environment ---
-# Option A: Use site Miniconda module (preferred on CSC)
-module avail 2>/dev/null | grep -i miniconda || true
-module load Miniconda3  # adjust to the exact name shown by `module avail`
+mkdir -p logs .cache
+export XDG_CACHE_HOME="$PWD/.cache"
+export PIP_CACHE_DIR="$PWD/.cache/pip"
 
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate amlphase2 || {
-  echo "Conda env 'amlphase2' not found. Creating it..."
-  conda create -y -n amlphase2 python=3.10
-  conda activate amlphase2
-  # CUDA-enabled PyTorch (CUDA 12.1 wheels are common on A100)
-  pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision torchaudio
-  # Your analysis deps
-  pip install fcsparser flowkit tifffile opencv-python umap-learn scikit-learn matplotlib scipy pandas
-}
+# --- Python env that inherits the module's site-packages (so torch is visible) ---
+PYENV="$PWD/.venv_amlphase2"
+rm -rf "$PYENV"
+python -m venv --system-site-packages "$PYENV"
+source "$PYENV/bin/activate"
+python -m ensurepip --upgrade || true
+python -m pip install --upgrade pip setuptools wheel
+
+# Light deps (NO flowkit). yaml is required by your script.
+pip install --no-input pyyaml fcsparser tifffile opencv-python \
+                      umap-learn scikit-learn matplotlib scipy pandas
 
 # --- Sanity checks ---
-echo "===== GPU ====="
+echo "==== Node & GPU check ===="
+hostname
 nvidia-smi || true
-python - <<'PY'
-import torch
+python - <<'PY' || true
+import torch, yaml
 print("CUDA available:", torch.cuda.is_available())
-if torch.cuda.is_available():
-    print("GPU:", torch.cuda.get_device_name(0))
+print("CUDA device count:", torch.cuda.device_count())
+print("Device:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")
+print("torch:", getattr(torch, "__version__", "?"))
+print("pyyaml:", getattr(yaml, "__version__", "?"))
 PY
+echo "=========================="
 
-# --- Run your analysis ---
-python -u src/phase2_complete.py
+echo "[`date`] Starting Phase 2…"
+which python; python -V
+
+# Run your phase 2 script
+srun -u python -u src/phase2_complete.py \
+  --image-dir /scratch/project_2010376/BDS8/BDS8_data \
+  --fcs-dir   /scratch/project_2010376/BDS8/BDS8_data \
+  --model-path models/last.ckpt \
+  --output-dir outputs/phase2 \
+  --arcsinh-cofactor 150 \
+  --max-cells-per-sample 1000 \
+  --batch-size 4 \
+  --max-samples 20
+
+RC=$?
+echo "[`date`] Phase 2 finished with exit code ${RC}"
+exit ${RC}

@@ -87,7 +87,10 @@ class FCSProcessor:
         self.cofactor = float(cofactor)
         self.log_dir = Path(log_dir); self.log_dir.mkdir(parents=True, exist_ok=True)
         self.last_fcs = None
-
+        self.marker_order = [
+            "CD34","CD117","CD38","HLA-DR","CD13","CD33","CD15","CD16",
+            "CD11b","CD56","CD7","MPO","CD45"
+        ]
         self.marker_mappings = {
             'CD34' : ['CD34-BV421','CD34-V450','CD34-PerCP','CD34 BV785','CD34 BV786','CD34'],
             'CD117': ['CD117-PE','CD117-APC','cKit','c-Kit','KIT','CD117'],
@@ -392,20 +395,25 @@ class SampleLevelDataset(Dataset):
         }
 
 def pad_collate(batch):
-    # Find max instances in this batch
+    # Max instances and max feature width in this batch
     max_n = max(b['features'].shape[0] for b in batch)
-    D = batch[0]['features'].shape[1]
+    Ds = [b['features'].shape[1] for b in batch]
+    D = max(Ds)
     B = len(batch)
+
     feats = torch.zeros(B, max_n, D, dtype=torch.float32)
     labels = torch.empty(B, dtype=torch.long)
     blast = torch.empty(B, 1, dtype=torch.float32)
     sids = []
+
     for i, b in enumerate(batch):
-        n = b['features'].shape[0]
-        feats[i, :n] = b['features']
+        x = b['features']
+        n, d = x.shape
+        feats[i, :n, :d] = x  # right-pad feature width if needed
         labels[i] = b['label']
         blast[i, 0] = b['blast_pct']
         sids.append(b['sid'])
+
     return {'features': feats, 'label': labels, 'blast_pct': blast, 'sid': sids}
 
 
@@ -461,19 +469,26 @@ class Phase2Pipeline:
                 print(f"  ✗ {sample_id}: no images found")
         return matches
 
+    def _compute_phenotype_vector(self, fcs_df: pd.DataFrame) -> np.ndarray:
+        vals = []
+        for m in self.marker_order:
+            if m in fcs_df.columns:
+                v = pd.to_numeric(fcs_df[m], errors='coerce')
+                vals.append(float(np.nanmedian(v)))
+            else:
+                vals.append(0.0)  # impute missing marker as 0 after arcsinh
+        return np.asarray(vals, dtype=np.float32)
+
     def build_feature_cache(self, matched_samples: Dict) -> Dict:
         print("\n📦 Building feature cache...")
         rng = np.random.RandomState(SEED)
+
         for sid, data in matched_samples.items():
             print(f"\nProcessing {sid}...")
             fcs_df = self.fcs_processor.load_fcs(data['fcs_path'])
-            
-            marker_cols = [c for c in ["CD34","CD117","CD38","HLA-DR","CD13","CD33","CD15","CD16","CD11b","CD56","CD7","MPO","CD45"]if c in fcs_df.columns]
-            if marker_cols:
-                        # robust median vector (nan-safe)
-                phen_vec = fcs_df[marker_cols].median(numeric_only=True).astype(np.float32).values
-            else:
-                phen_vec = np.empty((0,), dtype=np.float32)
+
+            # fixed-length phenotype vector in a consistent order
+            phen_vec = self._compute_phenotype_vector(fcs_df)
 
             blast_mask, _ = self.fcs_processor.gate_blast_population_with_tuning(fcs_df)
             blast_pct = float(blast_mask.mean())
@@ -487,20 +502,20 @@ class Phase2Pipeline:
             if feats.size == 0:
                 print("  ⚠️ No features extracted; skipping sample.")
                 continue
-            #feats = self.morpho_analyzer.extract_morphological_features(img_paths, batch_size=1)
 
-            # concatenate the sample-level phenotype vector to each cell feature
-            if phen_vec.size:
-                phen_tile = np.tile(phen_vec, (feats.shape[0], 1))
-                feats = np.hstack([feats, phen_tile]).astype(np.float32)    
+            # append the SAME phenotype vector to every cell (fixed dimension)
+            phen_tile = np.tile(phen_vec, (feats.shape[0], 1))
+            feats = np.hstack([feats, phen_tile]).astype(np.float32)
+
             self.feature_cache[sid] = {
                 'features': feats,
                 'label': 1 if data['sample_type'] == 'AML' else 0,
                 'blast_pct': blast_pct,
                 'sample_type': data['sample_type']
             }
-            print(f"  ✓ Cached {len(feats)} cells, blast={blast_pct:.1%}")
+            print(f"  ✓ Cached {len(feats)} cells, blast={blast_pct:.1%}, feature_dim={feats.shape[1]}")
         return self.feature_cache
+
 
     def train_mil_model(self, epochs: int = 50):
         print("\n🧠 Training MIL model...")
