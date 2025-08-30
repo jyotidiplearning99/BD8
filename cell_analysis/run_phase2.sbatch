@@ -1,48 +1,45 @@
 #!/bin/bash
-#SBATCH --job-name=phase2
-#SBATCH --account=project_2010376
-#SBATCH --partition=gpusmall
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
+#SBATCH -J phase2_aml
+#SBATCH --partition=gputest            # try: gputest (15 min) → later: gpusmall/gpumedium
+#SBATCH --time=00:15:00                # increase for gpusmall/gpumedium
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --gres=gpu:a100:1          # <-- use GRES on this cluster
-#SBATCH --time=04:00:00
-#SBATCH --output=logs/%x-%j.out
-#SBATCH --chdir=/scratch/project_2010376/JDs_Project/cell_analysis
+# Either of the following GPU requests usually works. Keep ONE and comment the other.
+#SBATCH --gres=gpu:a100:1             # Mahti shows GRES=gpu:a100 in sinfo (safe choice)
+# #SBATCH --gpus=1                     # Modern Slurm alternative (commented by default)
+
+#SBATCH -o logs/%x_%j.out
+#SBATCH -e logs/%x_%j.err
 
 set -euo pipefail
-mkdir -p logs outputs/phase2
 
 module purge || true
-module load python-data/3.10-24.04
-source ~/.venvs/amlphase2/bin/activate
 
-# ensure src is a package and PYTHONPATH is safe
-test -f src/__init__.py || touch src/__init__.py
-export PROJECT_ROOT=/scratch/project_2010376/JDs_Project/cell_analysis
-export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+# --- Activate Python environment ---
+# Option A: Use site Miniconda module (preferred on CSC)
+module avail 2>/dev/null | grep -i miniconda || true
+module load Miniconda3  # adjust to the exact name shown by `module avail`
 
-# keep caches on scratch
-export SCR_BASE=/scratch/project_2010376/homecache/$USER
-mkdir -p "$SCR_BASE"/{pip-cache,tmp,torch-cache}
-export PIP_CACHE_DIR="$SCR_BASE/pip-cache"
-export TMPDIR="$SCR_BASE/tmp"
-export TORCH_HOME="$SCR_BASE/torch-cache"
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate amlphase2 || {
+  echo "Conda env 'amlphase2' not found. Creating it..."
+  conda create -y -n amlphase2 python=3.10
+  conda activate amlphase2
+  # CUDA-enabled PyTorch (CUDA 12.1 wheels are common on A100)
+  pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision torchaudio
+  # Your analysis deps
+  pip install fcsparser flowkit tifffile opencv-python umap-learn scikit-learn matplotlib scipy pandas
+}
 
-export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-8}
-
-echo "===== GPU & Torch check ====="
+# --- Sanity checks ---
+echo "===== GPU ====="
 nvidia-smi || true
 python - <<'PY'
-import sys, torch
-print("python:", sys.version.split()[0])
-print("torch:", torch.__version__)
-print("cuda available:", torch.cuda.is_available())
+import torch
+print("CUDA available:", torch.cuda.is_available())
 if torch.cuda.is_available():
-    print("device:", torch.cuda.get_device_name(0))
+    print("GPU:", torch.cuda.get_device_name(0))
 PY
-echo "============================="
 
-# run as a module so "import src.*" works
-python -u -m src.phase2_fcs_gating
+# --- Run your analysis ---
+python -u src/phase2_complete.py
