@@ -53,7 +53,7 @@ echo "[`date`] Starting Phase 2…"
 which python; python -V
 
 # Run your phase 2 script
-srun -u python -u src/phase2_complete.py \
+srun -u python -u src/phase2_complete_v3.py \
   --image-dir /scratch/project_2010376/BDS8/BDS8_data \
   --fcs-dir   /scratch/project_2010376/BDS8/BDS8_data \
   --model-path models/last.ckpt \
