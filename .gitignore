@@ -116,3 +116,7 @@ __pycache__/
 *.py[cod]
 # notebooks
 .ipynb_checkpoints/
+cell_analysis/venv_amlphase2/ 
+**/site-packages/
+# pip cache
+pip_cache/
