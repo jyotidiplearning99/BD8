@@ -1,0 +1,57 @@
+2025-09-05 22:19:59,771 - INFO - ============================================================
+2025-09-05 22:19:59,772 - INFO - CLINICAL CELL PAINTING ANALYSIS WITH FCS INTEGRATION
+2025-09-05 22:19:59,772 - INFO - ============================================================
+2025-09-05 22:20:00,033 - INFO - Loading pretrained weights from Hugging Face hub (timm/resnet50.a1_in1k)
+2025-09-05 22:20:00,278 - INFO - [timm/resnet50.a1_in1k] Safe alternative available for 'pytorch_model.bin' (as 'model.safetensors'). Loading weights using safetensors.
+2025-09-05 22:20:04,149 - INFO - Loaded ResNet50 on cuda
+2025-09-05 22:20:04,154 - INFO - 
+========================================
+2025-09-05 22:20:04,154 - INFO - STARTING FCS ANALYSIS
+2025-09-05 22:20:04,155 - INFO - ========================================
+2025-09-05 22:20:08,297 - INFO - FCS file distribution:
+2025-09-05 22:20:08,297 - INFO -   exp7_presort: 2 files
+2025-09-05 22:20:08,297 - INFO -   presort_pbmc: 5 files
+2025-09-05 22:20:08,297 - INFO -   exp8_presort: 2 files
+2025-09-05 22:20:08,297 - INFO -   healthy_bm: 9 files
+2025-09-05 22:20:08,297 - INFO -   aml: 2 files
+2025-09-05 22:20:08,297 - INFO -   dmso_control: 2 files
+2025-09-05 22:20:08,298 - INFO -   venetoclax_treated: 2 files
+2025-09-05 22:20:08,298 - INFO -   heidelberg_comparison: 44 files
+2025-09-05 22:20:08,298 - INFO - Total FCS files: 68
+2025-09-05 22:20:08,298 - INFO - Analyzing 2 exp7_presort FCS files...
+2025-09-05 22:20:08,685 - ERROR - Error analyzing FCS file /scratch/project_2010376/BDS8/BDS8_data/Pre-sort 8.5.2025 exp 7.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:09,067 - ERROR - Error analyzing FCS file /scratch/project_2010751/BDS8/BDS8_data/PBMC/PBMC_data/Pre-sort 8.5.2025 exp 7.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:09,068 - INFO - Analyzing 5 presort_pbmc FCS files...
+2025-09-05 22:20:09,405 - ERROR - Error analyzing FCS file /scratch/project_2010376/BDS8/BDS8_data/Pre-sort 12.2.2025.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:09,752 - ERROR - Error analyzing FCS file /scratch/project_2010376/BDS8/BDS8_data/Pre-sort 28.2.2025.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:10,109 - ERROR - Error analyzing FCS file /scratch/project_2010376/BDS8/BDS8_data/Pre-sort 22.1.2025.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:10,467 - ERROR - Error analyzing FCS file /scratch/project_2010376/BDS8/BDS8_data/Pre-sort 31.1.2025.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:10,816 - ERROR - Error analyzing FCS file /scratch/project_2010376/BDS8/BDS8_data/Pre-sort 6.2.2025.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:10,817 - INFO - Analyzing 2 exp8_presort FCS files...
+2025-09-05 22:20:11,187 - ERROR - Error analyzing FCS file /scratch/project_2010376/BDS8/BDS8_data/Pre-sort 14.5.2025 Exp 8.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:11,547 - ERROR - Error analyzing FCS file /scratch/project_2010751/BDS8/BDS8_data/PBMC/PBMC_data/Pre-sort 14.5.2025 Exp 8.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:11,549 - INFO - Analyzing 9 healthy_bm FCS files...
+2025-09-05 22:20:11,891 - ERROR - Error analyzing FCS file /scratch/project_2010376/BDS8/BDS8_data/PBMC_CP3_presort.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:12,256 - ERROR - Error analyzing FCS file /scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_clemastine20uM-48h.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:12,599 - ERROR - Error analyzing FCS file /scratch/project_2010376/BDS8/BDS8_data/Healthy BM/BM_2025_07-05-2025_notreatment.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:12,946 - ERROR - Error analyzing FCS file /scratch/project_2010751/BDS8/BDS8_data/PBMC/PBMC_data/Pre-sort 12.2.2025.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:13,289 - ERROR - Error analyzing FCS file /scratch/project_2010751/BDS8/BDS8_data/PBMC/PBMC_data/Pre-sort 28.2.2025.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:13,639 - ERROR - Error analyzing FCS file /scratch/project_2010751/BDS8/BDS8_data/PBMC/PBMC_data/Pre-sort 22.1.2025.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:13,989 - ERROR - Error analyzing FCS file /scratch/project_2010751/BDS8/BDS8_data/PBMC/PBMC_data/Pre-sort 31.1.2025.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:14,312 - ERROR - Error analyzing FCS file /scratch/project_2010751/BDS8/BDS8_data/PBMC/PBMC_data/PBMC_CP3_presort.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:14,650 - ERROR - Error analyzing FCS file /scratch/project_2010751/BDS8/BDS8_data/PBMC/PBMC_data/Pre-sort 6.2.2025.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:14,651 - INFO - Analyzing 2 aml FCS files...
+2025-09-05 22:20:14,977 - ERROR - Error analyzing FCS file /scratch/project_2010376/BDS8/BDS8_data/AML/Full stain imaging EXP_41.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:15,455 - ERROR - Error analyzing FCS file /scratch/project_2010376/BDS8/BDS8_data/AML/PS1.fcs: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2025-09-05 22:20:15,456 - INFO - Analyzing 2 dmso_control FCS files...
+2025-09-05 22:20:16,389 - INFO - Analyzing 2 venetoclax_treated FCS files...
+2025-09-05 22:20:17,348 - INFO - Analyzing 44 heidelberg_comparison FCS files...
+2025-09-05 22:20:24,724 - INFO - Saved FCS summary to outputs/flow2cp_analysis/fcs_analysis/fcs_summary.csv
+2025-09-05 22:20:25,828 - INFO - Saved improved FCS analysis visualization to outputs/flow2cp_analysis/fcs_analysis/fcs_analysis_improved.png
+2025-09-05 22:20:25,829 - INFO - 
+========================================
+2025-09-05 22:20:25,829 - INFO - STARTING IMAGING ANALYSIS
+2025-09-05 22:20:25,829 - INFO - ========================================
+2025-09-05 22:20:32,661 - INFO - Found 605635 TIFF files in /scratch/project_2010376/BDS8/BDS8_data
+2025-09-05 22:23:38,903 - INFO - Found 684235 TIFF files in /scratch/project_2010751/BDS8/BDS8_data
+2025-09-05 22:26:52,326 - INFO - Image distribution by sample type (deduplicated):

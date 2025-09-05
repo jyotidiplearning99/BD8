@@ -54,3 +54,65 @@ __pycache__/
 *.npz
 *.out
 *.tar.gz
+
+/AML_Persister_Analysis/logs
+/cell_analysis/.cache
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+
+# Virtual envs
+.venv/
+venv*/
+env*/
+ENV*/
+**/site-packages/
+cell_analysis/venv_amlphase2/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Builds / dist
+build/
+dist/
+*.egg-info/
+
+# Logs & runs
+*.log
+logs/
+wandb/
+mlruns/
+
+# Data & model artifacts (optional – keep if you need them tracked)
+data/
+datasets/
+checkpoints/
+models/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.h5
+*.npy
+*.npz
+*.zip
+*.tar*
+*.gz
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+.venv/
+venv*/
+env*/
+cell_analysis/venv_amlphase2/
+**/site-packages/
+# python junk
+__pycache__/
+*.py[cod]
+# notebooks
+.ipynb_checkpoints/
